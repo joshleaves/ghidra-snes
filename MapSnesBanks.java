@@ -11,6 +11,7 @@ public class MapSnesBanks extends GhidraScript {
   private AddressSpace space;
   private long romSize;
   private FileBytes romFileBytes;
+  private static final boolean FORCE_REMAP = false;
 
   public void run() throws Exception {
     mem = currentProgram.getMemory();
@@ -22,7 +23,19 @@ public class MapSnesBanks extends GhidraScript {
 
     println("Mapping as " + mode + ", ROM size = 0x" + Long.toHexString(romSize));
 
-    clearMemoryMap();
+    if (isAlreadyMapped()) {
+      if (!FORCE_REMAP) {
+        printerr("SNES mapping already exists. Refusing to remap because it would delete labels, functions, comments and analysis.");
+        printerr("Set FORCE_REMAP = true in the script if you really want to rebuild the memory map.");
+        return;
+      }
+
+      println("FORCE_REMAP is true; existing SNES mapping will be removed.");
+      clearMemoryMap();
+    } else {
+      println("No existing SNES mapping found; clearing raw import blocks before mapping.");
+      clearMemoryMap();
+    }
 
     if (mode.equals("LoROM")) mapLoROM();
     else if (mode.equals("HiROM")) mapHiROM();
@@ -119,6 +132,7 @@ public class MapSnesBanks extends GhidraScript {
     println("Using FileBytes: " + romFileBytes.getFilename() + ", size = 0x" + Long.toHexString(romSize));
   }
 
+  // Say bye-bye to your data
   private void clearMemoryMap() throws Exception {
     MemoryBlock[] blocks = mem.getBlocks();
 
@@ -126,6 +140,19 @@ public class MapSnesBanks extends GhidraScript {
       println("remove block: " + block.getName());
       mem.removeBlock(block, monitor);
     }
+  }
+
+  private boolean isAlreadyMapped() {
+    for (MemoryBlock block : mem.getBlocks()) {
+      if (isSnesMappedBlock(block)) return true;
+    }
+    return false;
+  }
+
+  private boolean isSnesMappedBlock(MemoryBlock block) {
+    String name = block.getName();
+    return name.startsWith("lorom_")
+      || name.startsWith("hirom_");
   }
 
   private void mapWram() throws Exception {

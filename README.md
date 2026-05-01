@@ -9,6 +9,9 @@ https://github.com/achan1989/ghidra-snes-loader
 
 ## MapSnesBanks.java
 
+> [!CAUTION]
+> This script is DESTRUCTIVE: to map the ROM to banks, the MemoryBlock are all destroyed to avoid conflicts. This will result in a loss of ALL existing analysis.
+
 Maps a LoROM/HiROM into a CPU-like memory layout:
 
 - LoROM: `00–7D:8000–FFFF`
@@ -19,6 +22,7 @@ No mirrors, no IO, no bus modeling: just a clean view to follow code and pointer
 
 The script:
 - auto-detects LoROM/HiROM
+- CLEARS ALL ANALYSIS PRESENT
 - uses Ghidra FileBytes (no dependency on the initial memory map)
 - can be safely re-run (it rebuilds the mapping)
 
