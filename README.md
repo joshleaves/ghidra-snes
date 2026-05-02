@@ -4,23 +4,27 @@ SNES tooling for Ghidra.
 
 This project provides a Ghidra extension for loading and working with SNES ROMs. It currently includes:
 
-- a SNES ROM loader with LoROM / HiROM mapping
-- a 65816 language specification for SNES-oriented analysis
-- SNES memory-map helpers and register labels
+- a SNES ROM loader with LoROM / HiROM support
+- a 65816 language specification tailored for SNES analysis
+- SNES memory helpers (MMIO, WRAM, mirrors) and register/vector labels
 
 ## Features
 ### SNES ROM loader
 
-The loader maps SNES ROMs at import time instead of treating them as raw binary blobs.
+The loader maps SNES ROMs into the SNES CPU address space at import time instead of treating them as raw binary blobs.
 
-Supported mappings:
+Supported mappings (canonical):
 
-- LoROM: `00–7D:8000–FFFF`
-- HiROM: `40–7F:0000–FFFF`
+- LoROM: `80–FF:8000–FFFF`
+- HiROM: `C0–FF:0000–FFFF`
 - WRAM: `7E–7F:0000–FFFF`
 - SNES MMIO register ranges
 
+Optional mirrors can be toggled on/off from **Tools → SNES Memory** to expose the lower-bank views (e.g. `00–7D` for LoROM, `00–3F`/`80–BF` windows for HiROM).
+
 ROM mapping detection is score-based and compares LoROM and HiROM header candidates. It also supports optional `0x200`-byte SMC header adjustment.
+
+The loader creates primary (canonical) ROM banks; mirror banks are optional and managed by the plugin UI.
 
 Loader implementation:
 
@@ -33,11 +37,15 @@ The extension includes a SNES-oriented 65816 language definition:
 - language id: `65816:LE:24:snes`
 - compiler spec: `default`
 
-This allows imported ROMs to use 24-bit 65816 addressing directly in Ghidra.
+This allows imported ROMs to use native 24-bit 65816 addressing directly in Ghidra.
 
 ### SNES memory helpers
 
-The extension includes initial support for SNES-specific memory visibility controls, such as MMIO / WRAM / mirror mappings.
+The extension includes SNES-specific memory visibility controls (MMIO, WRAM, SRAM, and ROM mirrors), with toggleable mappings exposed in the UI.
+
+#### Usage
+
+After importing a ROM, use **Tools → SNES Memory** to enable/disable MMIO, WRAM, SRAM (if present), and ROM mirror banks.
 
 ## Build
 
