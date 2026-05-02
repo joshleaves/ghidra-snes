@@ -58,13 +58,6 @@ The built extension zip will be created in `dist/`.
 
 When importing a ROM, select the **SNES ROM Loader** format.
 
-## Legacy script
-
-`MapSnesBanks.java` is kept as a standalone script reference.
-
-> [!CAUTION]
-> The script clears all memory blocks before remapping, which destroys existing analysis.
-
 ## Third-party code notice
 
 This project includes code originally sourced from [ghidra-65816](https://github.com/achan1989/ghidra-65816).
