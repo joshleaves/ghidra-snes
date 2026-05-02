@@ -1,0 +1,70 @@
+# Absolute.
+MemAbsJmp: !$imm16    is imm16  {
+    local offset:2 = imm16;
+    local address:3 = (zext(PBR) << 16) | zext(offset);
+    export *:3 address;
+}
+
+# Absolute indexed by X, indirect.
+MemAbsIdxIndJmp: (!$imm16,"X")    is imm16 & IdxX  {
+    # Accessing the indirect address must wrap to stay within the bank.
+    # Indexing does NOT allow the indirect lookup to cross bank boundaries.
+    local offset:2 = imm16 + IdxX;
+    local ind_lo_addr:3 = (zext(PBR) << 16) | zext(offset);
+    local ind_hi_addr:3 = (zext(PBR) << 16) | zext(offset + 1);
+
+    local addr_lo:1 = *:1 ind_lo_addr;
+    local addr_hi:1 = *:1 ind_hi_addr;
+    local address:3 = (zext(PBR) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
+    export *:3 address;
+}
+
+# Absolute indirect.
+MemAbsIndJmp: (!$imm16)    is imm16  {
+    # Accessing the indirect address must wrap to stay within bank 0.
+    local offset:2 = imm16;
+    local ind_lo_addr:3 = zext(offset);
+    local ind_hi_addr:3 = zext(offset + 1);
+
+    local addr_lo:1 = *:1 ind_lo_addr;
+    local addr_hi:1 = *:1 ind_hi_addr;
+    local address:3 = (zext(PBR) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
+    export *:3 address;
+}
+
+# Absolute indirect long.
+MemAbsIndLongJmp: [!$imm16]    is imm16  {
+    # Accessing the indirect address must wrap to stay within bank 0.
+    local offset:2 = imm16;
+    local ind_lo_addr:3 = zext(offset);
+    local ind_hi_addr:3 = zext(offset + 1);
+    local ind_bank_addr:3 = zext(offset + 2);
+
+    local addr_lo:1 = *:1 ind_lo_addr;
+    local addr_hi:1 = *:1 ind_hi_addr;
+    local addr_bank:1 = *:1 ind_bank_addr;
+    local address:3 = (zext(addr_bank) << 16) | (zext(addr_hi) << 8) | zext(addr_lo);
+    export *:3 address;
+}
+
+# Absolute long.
+MemAbsLongJmp: !>$imm24    is imm24  {
+    local address:3 = imm24;
+    export *:3 address;
+}
+
+# PC relative.
+# Wraps to stay within the bank of the current instruction.
+MemPCRelBra: $reloc    is rel8
+    [ reloc = (inst_start $and 0xff0000) $or ((inst_next + rel8) $and 0x00ffff); ]
+{
+    export *:3 reloc;
+}
+
+# PC relative long.
+# Wraps to stay within the bank of the current instruction.
+MemPCRelLongBra: $reloc    is rel16
+    [ reloc = (inst_start $and 0xff0000) $or ((inst_next + rel16) $and 0x00ffff); ]
+{
+    export *:3 reloc;
+}

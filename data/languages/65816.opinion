@@ -1,0 +1,5 @@
+<opinions>
+    <constraint loader="SNES ROM" compilerSpecID="default">
+        <constraint processor="65816" endian="little" size="24" />
+    </constraint>
+</opinions>

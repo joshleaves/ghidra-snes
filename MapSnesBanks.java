@@ -96,7 +96,7 @@ public class MapSnesBanks extends GhidraScript {
 
     for (long bank = 0; bank < banks && bank <= 0x7d; bank++) {
       long off = bank * 0x8000;
-      map("lorom_%02X".formatted(bank), (bank << 16) | 0x8000, off, 0x8000);
+      map("rom_lorom_%02X".formatted(bank), (bank << 16) | 0x8000, off, 0x8000);
     }
   }
 
@@ -108,7 +108,7 @@ public class MapSnesBanks extends GhidraScript {
 
       long bank = 0x40 + i;
       if (bank <= 0x7f) {
-        map("hirom_%02X".formatted(bank), bank << 16, off, 0x10000);
+        map("rom_hirom_%02X".formatted(bank), bank << 16, off, 0x10000);
       }
     }
   }

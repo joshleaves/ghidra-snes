@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<processor_spec>
+  <programcounter register="PC_FULL"/>
+
+  <!-- <volatile outputop="write" inputop="read">
+    <range space="RAM" first="0x0" last="0x20"/>
+  </volatile> -->
+
+  <default_symbols>
+    <!-- We'd like to designate the following as entry point vectors by using the attributes
+    `entry="true" type="code_ptr"`, but that doesn't work properly. Because the PC is three bytes
+    Ghidra expects these vectors to be three bytes, but they are actually only two bytes in ROM
+    (the 65816 always assumes that the highest byte is zero).
+    You must add the entry points manually, or rely on a loader or scripts to set them up. -->
+    <symbol name="VEC_IRQ_EMULATION" address="00FFFE"/>
+    <symbol name="VEC_RESET_EMULATION" address="00FFFC"/>
+    <symbol name="VEC_NMI_EMULATION" address="00FFFA"/>
+    <symbol name="VEC_ABORT_EMULATION" address="00FFF8"/>
+    <symbol name="VEC_COP_EMULATION" address="00FFF4"/>
+    <symbol name="VEC_IRQ_NATIVE" address="00FFEE"/>
+    <symbol name="VEC_NMI_NATIVE" address="00FFEA"/>
+    <symbol name="VEC_ABORT_NATIVE" address="00FFE8"/>
+    <symbol name="VEC_BRK_NATIVE" address="00FFE6"/>
+    <symbol name="VEC_COP_NATIVE" address="00FFE4"/>
+
+    <!-- Adding more registers from undisbeliever's Register Cheat Sheet
+    
+    ATTENTION: The JOY2H register is $421B, not $422B!
+
+    Sources:
+    - https://undisbeliever.net/snesdev/registers/cheatsheet.html
+    - https://snes.nesdev.org/wiki/Super_Scope
+    -->
+    <symbol name="INIDISP" address="002100" />
+    <symbol name="OBSEL" address="002101" />
+    <symbol name="OAMADDL" address="002102" />
+    <symbol name="OAMADDH" address="002103" />
+    <symbol name="OAMDATA" address="002104" />
+    <symbol name="BGMODE" address="002105" />
+    <symbol name="MOSAIC" address="002106" />
+    <symbol name="BG1SC" address="002107" />
+    <symbol name="BG2SC" address="002108" />
+    <symbol name="BG3SC" address="002109" />
+    <symbol name="BG4SC" address="00210a" />
+    <symbol name="BG12NBA" address="00210b" />
+    <symbol name="BG34NBA" address="00210c" />
+    <symbol name="BG1HOFS_M7HOFS" address="00210d" />
+    <symbol name="BG1VOFS_M7VOFS" address="00210e" />
+    <symbol name="BG2HOFS" address="00210f" />
+    <symbol name="BG2VOFS" address="002110" />
+    <symbol name="BG3HOFS" address="002111" />
+    <symbol name="BG3VOFS" address="002112" />
+    <symbol name="BG4HOFS" address="002113" />
+    <symbol name="BG4VOFS" address="002114" />
+    <symbol name="VMAIN" address="002115" />
+    <symbol name="VMADDL" address="002116" />
+    <symbol name="VMADDH" address="002117" />
+    <symbol name="VMDATAL" address="002118" />
+    <symbol name="VMDATAH" address="002119" />
+    <symbol name="M7SEL" address="00211a" />
+    <symbol name="M7A" address="00211b" />
+    <symbol name="M7B" address="00211c" />
+    <symbol name="M7C" address="00211d" />
+    <symbol name="M7D" address="00211e" />
+    <symbol name="M7X" address="00211f" />
+    <symbol name="M7Y" address="002120" />
+    <symbol name="CGADD" address="002121" />
+    <symbol name="CGDATA" address="002122" />
+    <symbol name="W12SEL" address="002123" />
+    <symbol name="W34SEL" address="002124" />
+    <symbol name="WOBJSEL" address="002125" />
+    <symbol name="WH0" address="002126" />
+    <symbol name="WH1" address="002127" />
+    <symbol name="WH2" address="002128" />
+    <symbol name="WH3" address="002129" />
+    <symbol name="WBGLOG" address="00212a" />
+    <symbol name="WOBJLOG" address="00212b" />
+    <symbol name="TM" address="00212c" />
+    <symbol name="TS" address="00212d" />
+    <symbol name="TMW" address="00212e" />
+    <symbol name="TSW" address="00212f" />
+    <symbol name="CGWSEL" address="002130" />
+    <symbol name="CGADSUB" address="002131" />
+    <symbol name="COLDATA" address="002132" />
+    <symbol name="SETINI" address="002133" />
+    <symbol name="MPYL" address="002134" />
+    <symbol name="MPYM" address="002135" />
+    <symbol name="MPYH" address="002136" />
+    <symbol name="SLHV" address="002137" />
+    <symbol name="OAMDATAREAD" address="002138" />
+    <symbol name="VMDATALREAD" address="002139" />
+    <symbol name="VMDATAHREAD" address="00213a" />
+    <symbol name="CGDATAREAD" address="00213b" />
+    <symbol name="OPHCT" address="00213c" />
+    <symbol name="OPVCT" address="00213d" />
+    <symbol name="STAT77" address="00213e" />
+    <symbol name="STAT78" address="00213f" />
+    <symbol name="APUIO0" address="002140" />
+    <symbol name="APUIO1" address="002141" />
+    <symbol name="APUIO2" address="002142" />
+    <symbol name="APUIO3" address="002143" />
+    <symbol name="WMDATA" address="002180" />
+    <symbol name="WMADDL" address="002181" />
+    <symbol name="WMADDM" address="002182" />
+    <symbol name="WMADDH" address="002183" />
+    <symbol name="JOYSER0" address="004016" />
+    <symbol name="JOYSER1" address="004017" />
+    <symbol name="NMITIMEN" address="004200" />
+    <symbol name="WRIO" address="004201" />
+    <symbol name="WRMPYA" address="004202" />
+    <symbol name="WRMPYB" address="004203" />
+    <symbol name="WRDIVL" address="004204" />
+    <symbol name="WRDIVH" address="004205" />
+    <symbol name="WRDIVB" address="004206" />
+    <symbol name="HTIMEL" address="004207" />
+    <symbol name="HTIMEH" address="004208" />
+    <symbol name="VTIMEL" address="004209" />
+    <symbol name="VTIMEH" address="00420a" />
+    <symbol name="MDMAEN" address="00420b" />
+    <symbol name="HDMAEN" address="00420c" />
+    <symbol name="MSEL" address="00420d" />
+    <symbol name="RDNMI" address="004210" />
+    <symbol name="TIMEUP" address="004211" />
+    <symbol name="HVBJOY" address="004212" />
+    <symbol name="RDIO" address="004213" />
+    <symbol name="RDDIVL" address="004214" />
+    <symbol name="RDDIVH" address="004215" />
+    <symbol name="RDMPYL" address="004216" />
+    <symbol name="RDMPYH" address="004217" />
+    <symbol name="JOY1L" address="004218" />
+    <symbol name="JOY1H" address="004219" />
+    <symbol name="JOY2L" address="00421a" />
+    <symbol name="JOY2H" address="00421b" />
+    <symbol name="JOY3L" address="00421c" />
+    <symbol name="JOY3H" address="00421d" />
+    <symbol name="JOY4L" address="00421e" />
+    <symbol name="JOY4H" address="00421f" />
+    
+    <!-- DMA channel 0 -->
+    <symbol name="DMAP0" address="004300" />
+    <symbol name="BBAD0" address="004301" />
+    <symbol name="A1T0L" address="004302" />
+    <symbol name="A1T0H" address="004303" />
+    <symbol name="A1B0" address="004304" />
+    <symbol name="DAS0L" address="004305" />
+    <symbol name="DAS0H" address="004306" />
+    <symbol name="DASB0" address="004307" />
+    <symbol name="A2A0L" address="004308" />
+    <symbol name="A2A0H" address="004309" />
+    <symbol name="NLTR0" address="00430a" />
+
+    <!-- DMA channel 1 -->
+    <symbol name="DMAP1" address="004310" />
+    <symbol name="BBAD1" address="004311" />
+    <symbol name="A1T1L" address="004312" />
+    <symbol name="A1T1H" address="004313" />
+    <symbol name="A1B1" address="004314" />
+    <symbol name="DAS1L" address="004315" />
+    <symbol name="DAS1H" address="004316" />
+    <symbol name="DASB1" address="004317" />
+    <symbol name="A2A1L" address="004318" />
+    <symbol name="A2A1H" address="004319" />
+    <symbol name="NLTR1" address="00431a" />
+
+    <!-- DMA channel 2 -->
+    <symbol name="DMAP2" address="004320" />
+    <symbol name="BBAD2" address="004321" />
+    <symbol name="A1T2L" address="004322" />
+    <symbol name="A1T2H" address="004323" />
+    <symbol name="A1B2" address="004324" />
+    <symbol name="DAS2L" address="004325" />
+    <symbol name="DAS2H" address="004326" />
+    <symbol name="DASB2" address="004327" />
+    <symbol name="A2A2L" address="004328" />
+    <symbol name="A2A2H" address="004329" />
+    <symbol name="NLTR2" address="00432a" />
+
+    <!-- DMA channel 3 -->
+    <symbol name="DMAP3" address="004330" />
+    <symbol name="BBAD3" address="004331" />
+    <symbol name="A1T3L" address="004332" />
+    <symbol name="A1T3H" address="004333" />
+    <symbol name="A1B3" address="004334" />
+    <symbol name="DAS3L" address="004335" />
+    <symbol name="DAS3H" address="004336" />
+    <symbol name="DASB3" address="004337" />
+    <symbol name="A2A3L" address="004338" />
+    <symbol name="A2A3H" address="004339" />
+    <symbol name="NLTR3" address="00433a" />
+
+    <!-- DMA channel 4 -->
+    <symbol name="DMAP4" address="004340" />
+    <symbol name="BBAD4" address="004341" />
+    <symbol name="A1T4L" address="004342" />
+    <symbol name="A1T4H" address="004343" />
+    <symbol name="A1B4" address="004344" />
+    <symbol name="DAS4L" address="004345" />
+    <symbol name="DAS4H" address="004346" />
+    <symbol name="DASB4" address="004347" />
+    <symbol name="A2A4L" address="004348" />
+    <symbol name="A2A4H" address="004349" />
+    <symbol name="NLTR4" address="00434a" />
+
+    <!-- DMA channel 5 -->
+    <symbol name="DMAP5" address="004350" />
+    <symbol name="BBAD5" address="004351" />
+    <symbol name="A1T5L" address="004352" />
+    <symbol name="A1T5H" address="004353" />
+    <symbol name="A1B5" address="004354" />
+    <symbol name="DAS5L" address="004355" />
+    <symbol name="DAS5H" address="004356" />
+    <symbol name="DASB5" address="004357" />
+    <symbol name="A2A5L" address="004358" />
+    <symbol name="A2A5H" address="004359" />
+    <symbol name="NLTR5" address="00435a" />
+
+    <!-- DMA channel 6 -->
+    <symbol name="DMAP6" address="004360" />
+    <symbol name="BBAD6" address="004361" />
+    <symbol name="A1T6L" address="004362" />
+    <symbol name="A1T6H" address="004363" />
+    <symbol name="A1B6" address="004364" />
+    <symbol name="DAS6L" address="004365" />
+    <symbol name="DAS6H" address="004366" />
+    <symbol name="DASB6" address="004367" />
+    <symbol name="A2A6L" address="004368" />
+    <symbol name="A2A6H" address="004369" />
+    <symbol name="NLTR6" address="00436a" />
+
+    <!-- DMA channel 7 -->
+    <symbol name="DMAP7" address="004370" />
+    <symbol name="BBAD7" address="004371" />
+    <symbol name="A1T7L" address="004372" />
+    <symbol name="A1T7H" address="004373" />
+    <symbol name="A1B7" address="004374" />
+    <symbol name="DAS7L" address="004375" />
+    <symbol name="DAS7H" address="004376" />
+    <symbol name="DASB7" address="004377" />
+    <symbol name="A2A7L" address="004378" />
+    <symbol name="A2A7H" address="004379" />
+    <symbol name="NLTR7" address="00437a" />
+  </default_symbols>
+
+  <!--
+  <default_memory_blocks>
+  </default_memory_blocks>
+  -->
+</processor_spec>

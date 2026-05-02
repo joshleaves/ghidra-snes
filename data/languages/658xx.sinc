@@ -1,0 +1,2058 @@
+# sleigh specification file for the WDC 65816
+#
+# I have not used the "correct" model of a two-byte program counter, as this would require the use
+# of overlay address spaces (which sounds like a pain). Instead, Ghidra considers the program
+# counter to be the three-byte combination of the PBR and PC registers. This allows for all of the
+# address space to be mapped and accessed easily, but means that Ghidra will not behave correctly
+# when analysing an instruction at the end of a program bank if the operands wrap at the bank
+# boundary.
+
+# UNSUPPORTED: 65802 variant.
+# UNSUPPORTED: correct behaviour when an instruction and its operand(s) wrap at the end of the
+#              program bank.
+# UNSUPPORTED: when pulling the context flags MF and XF from the stack Ghidra does not
+#              automatically set the correct processor mode (context variables).
+# UNSUPPORTED: automatic entry point symbols.
+
+
+define endian=little;
+define alignment=1;
+
+define space bus       type=ram_space       size=3  default;
+define space register  type=register_space  size=1;
+
+define register offset=0x00  size=3  [ PC_FULL ];
+define register offset=0x00  size=2  [ PC ];
+define register offset=0x02  size=1  [ PBR ];
+
+define register offset=0x10  size=2  [ C   X          Y          DP      SP ];
+define register offset=0x10  size=1  [ A B XLow XHigh YLow YHigh DPLow _ SPLow SPHigh ];
+define register offset=0x20  size=1  [ DBR ];
+
+# Status flags.
+define register offset=0x30  size=1  [ NF VF DF IF ZF CF BF ];
+define register offset=0x40  size=4  contextreg;
+define context contextreg
+    ctx_MF=(0,0)
+    ctx_XF=(1,1)
+    # DF removed from slot 2
+    ctx_EF=(3,3)
+;
+# Unfortunately the ctx_xx fields can't be used at all in P-code macros, and
+# are a pain to use in a semantic section.
+# These preprocessor macros work around this and allow for simpler manipulation
+# of status flags (bit range access/assignments).
+@define MF "contextreg[0,1]"
+@define XF "contextreg[1,1]"
+# @define DF "contextreg[2,1]"
+@define EF "contextreg[3,1]"
+
+
+define token opbyte (8)
+   op       = (0,7)
+
+   aaa      = (5,7)
+   bbb      = (2,4)
+   cc       = (0,1)
+   dd       = (2,3)
+;
+
+define token data8 (8)
+   imm8     = (0,7)
+   rel8     = (0,7) signed
+   unused8  = (0,7)
+;
+
+define token movearg (8)
+    srcbk    = (0,7)
+    destbk   = (0,7)
+;
+
+define token repsep (8)
+    op_flags = (0,7)
+    op_nf = (7,7)
+    op_vf = (6,6)
+    op_mf = (5,5)
+    op_xf = (4,4)
+    op_df = (3,3)
+    op_if = (2,2)
+    op_zf = (1,1)
+    op_cf = (0,0)
+;
+
+define token data16 (16)
+    imm16 = (0,15)
+    rel16 = (0,15) signed
+;
+
+define token data24 (24)
+    imm24 = (0,23)
+;
+
+
+##################################################################
+# Specify addressing modes for the different instruction groups.
+##################################################################
+
+@include "658xx_memaccess.sinc"
+
+# Two subsets of the addressing modes for the primary group instructions
+# (ADC, AND, CMP, EOR, LDA, ORA, SBC, STA).
+#
+# PRIMARY_OP_NO_IMM is the whole subset except for immediate addressing (can't STA to an immediate).
+#
+PRIMARY_OP_NO_IMM: RefAbs    is bbb=3 & cc=1; RefAbs  { export RefAbs; }
+PRIMARY_OP_NO_IMM: RefAbsLong    is bbb=3 & cc=3; RefAbsLong  { export RefAbsLong; }
+PRIMARY_OP_NO_IMM: RefDP    is bbb=1 & cc=1; RefDP  { export RefDP; }
+PRIMARY_OP_NO_IMM: RefDPInd    is bbb=4 & cc=2; RefDPInd  { export RefDPInd; }
+PRIMARY_OP_NO_IMM: RefDPIndLong    is bbb=1 & cc=3; RefDPIndLong  { export RefDPIndLong; }
+PRIMARY_OP_NO_IMM: RefAbsIdxX    is bbb=7 & cc=1; RefAbsIdxX  { export RefAbsIdxX; }
+PRIMARY_OP_NO_IMM: RefAbsLongIdxX    is bbb=7 & cc=3; RefAbsLongIdxX  { export RefAbsLongIdxX; }
+PRIMARY_OP_NO_IMM: RefAbsIdxY    is bbb=6 & cc=1; RefAbsIdxY  { export RefAbsIdxY; }
+PRIMARY_OP_NO_IMM: RefDPIdxX    is bbb=5 & cc=1; RefDPIdxX  { export RefDPIdxX; }
+PRIMARY_OP_NO_IMM: RefDPIdxInd    is bbb=0 & cc=1; RefDPIdxInd  { export RefDPIdxInd; }
+PRIMARY_OP_NO_IMM: RefDPIndIdx    is bbb=4 & cc=1; RefDPIndIdx  { export RefDPIndIdx; }
+PRIMARY_OP_NO_IMM: RefDPIndLongIdx    is bbb=5 & cc=3; RefDPIndLongIdx  { export RefDPIndLongIdx; }
+PRIMARY_OP_NO_IMM: RefSR    is bbb=0 & cc=3; RefSR  { export RefSR; }
+PRIMARY_OP_NO_IMM: RefSRIndIdx    is bbb=4 & cc=3; RefSRIndIdx  { export RefSRIndIdx; }
+#
+# PRIMARY_OP is the whole subset.
+#
+PRIMARY_OP: PRIMARY_OP_NO_IMM    is PRIMARY_OP_NO_IMM  { export PRIMARY_OP_NO_IMM; }
+PRIMARY_OP: RefImmMF    is bbb=2 & cc=1; RefImmMF  { export RefImmMF; }
+
+# Subsets of the addressing modes for some secondary instructions (most of the remaining
+# instructions that aren't branches/jumps and don't use implied addressing).
+#
+SEC_OP_COMMON: RefAbs    is bbb=3; RefAbs  { export RefAbs; }
+SEC_OP_COMMON: RefDP    is bbb=1; RefDP  { export RefDP; }
+#
+SEC_OP_X: SEC_OP_COMMON    is SEC_OP_COMMON  { export SEC_OP_COMMON; }
+SEC_OP_X: RefAbsIdxX    is bbb=7; RefAbsIdxX  { export RefAbsIdxX; }
+SEC_OP_X: RefDPIdxX    is bbb=5; RefDPIdxX  { export RefDPIdxX; }
+#
+SEC_OP_Y: SEC_OP_COMMON    is SEC_OP_COMMON  { export SEC_OP_COMMON; }
+SEC_OP_Y: RefAbsIdxY    is bbb=7; RefAbsIdxY  { export RefAbsIdxY; }
+SEC_OP_Y: RefDPIdxY    is bbb=5; RefDPIdxY  { export RefDPIdxY; }
+#
+SHIFT_OP: SEC_OP_X    is SEC_OP_X  { export SEC_OP_X; }
+# SHIFT_OP should also include the accumulator addressing mode, but this is handled separately by
+# each instruction.
+
+
+##################################################################
+# Specify instruction patterns and semantics.
+##################################################################
+
+# ADC 8 bit.
+:ADC PRIMARY_OP    is (ctx_MF=1 &
+    (op=0x69 | op=0x6d | op=0x6f | op=0x65 | op=0x72 | op=0x67 | op=0x7d |
+     op=0x7f | op=0x79 | op=0x75 | op=0x61 | op=0x71 | op=0x77 | op=0x63 |
+     op=0x73)) ... & PRIMARY_OP
+{
+    local is_dec:1 = DF;
+    local not_dec:1 = !DF;
+    local do_skip_dec_adjust:1;
+    local data:1; deref_read8(data, PRIMARY_OP);
+    local result:4;
+
+    if (is_dec) goto <decimal>;
+
+    # <binary>
+    result = zext(A) + zext(data) + zext(CF);
+    goto <flags>;
+
+    <decimal>
+    # Units.
+    result = (zext(A) & 0x0f) + (zext(data) & 0x0f) + zext(CF);
+    do_skip_dec_adjust = (result s<= 0x09);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust>;
+    result = result + 0x06;
+    <skip_dec_adjust>
+    CF = (result s> 0x0f);
+
+    # Tens.
+    result = (zext(A) & 0xf0) + (zext(data) & 0xf0) + (zext(CF) << 4) + (result & 0x0f);
+
+    <flags>
+    VF = (~zext(A ^ data) & (zext(A) ^ result) & 0x80) != 0;
+    # Do this ridiculous dance to properly infer sizes, otherwise we get
+    # "Output must be a boolean" errors...
+    local too_small:1 = result s<= 0x9f;
+    do_skip_dec_adjust = (not_dec || too_small);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_flags>;
+    result = result + 0x60;
+    <skip_dec_adjust_flags>
+    CF = result s> 0xFF;
+    local result8:1 = result:1;
+    flag8_NZ(result8);
+    A = result8;
+}
+
+# ADC 16 bit.
+:ADC PRIMARY_OP    is (ctx_MF=0 &
+    (op=0x69 | op=0x6d | op=0x6f | op=0x65 | op=0x72 | op=0x67 | op=0x7d |
+     op=0x7f | op=0x79 | op=0x75 | op=0x61 | op=0x71 | op=0x77 | op=0x63 |
+     op=0x73)) ... & PRIMARY_OP
+{
+    local is_dec:1 = DF;
+    local not_dec:1 = !DF;
+    local do_skip_dec_adjust:1;
+    local data:2; deref_read16(data, PRIMARY_OP);
+    local result:4;
+
+    if (is_dec) goto <decimal>;
+
+    # <binary>
+    result = zext(C) + zext(data) + zext(CF);
+    goto <flags>;
+
+    <decimal>
+    # Units.
+    result = (zext(C) & 0x0f) + (zext(data) & 0x0f) + zext(CF);
+    do_skip_dec_adjust = (result s<= 0x09);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_1>;
+    result = result + 0x06;
+    <skip_dec_adjust_1>
+    CF = result s> 0x0f;
+
+    # Tens.
+    result = (zext(C) & 0xf0) + (zext(data) & 0xf0) + (zext(CF) << 4) + (result & 0x0f);
+    do_skip_dec_adjust = (result s<= 0x9f);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_2>;
+    result = result + 0x60;
+    <skip_dec_adjust_2>
+    CF = result s> 0xff;
+
+    # Hundreds.
+    result = (zext(C) & 0x0f00) + (zext(data) & 0x0f00) + (zext(CF) << 8) + (result & 0xff);
+    do_skip_dec_adjust = (result s<= 0x09ff);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_3>;
+    result = result + 0x0600;
+    <skip_dec_adjust_3>
+    CF = result s> 0x0fff;
+
+    # Thousands.
+    result = (zext(C) & 0xf000) + (zext(data) & 0xf000) + (zext(CF) << 12) + (result & 0x0fff);
+
+    <flags>
+    VF = ((~zext(C ^ data)) & (zext(C) ^ result) & 0x8000) != 0;
+    local too_small:1 = (result s<= 0x9fff);
+    do_skip_dec_adjust = (not_dec || too_small);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_flags>;
+    result = result + 0x6000;
+    <skip_dec_adjust_flags>
+    CF = result s> 0xFFFF;
+    local result16:2 = result:2;
+    flag16_NZ(result16);
+    C = result16;
+}
+
+# AND 8 bit.
+:AND PRIMARY_OP    is (ctx_MF=1 &
+    (op=0x29 | op=0x2d | op=0x2f | op=0x25 | op=0x32 | op=0x27 | op=0x3d |
+     op=0x3f | op=0x39 | op=0x35 | op=0x21 | op=0x31 | op=0x37 | op=0x23 |
+     op=0x33)) ... & PRIMARY_OP
+{
+    local data:1; deref_read8(data, PRIMARY_OP);
+
+    A = A & data;
+    flag8_NZ(A);
+}
+
+# AND 16 bit.
+:AND PRIMARY_OP    is (ctx_MF=0 &
+    (op=0x29 | op=0x2d | op=0x2f | op=0x25 | op=0x32 | op=0x27 | op=0x3d |
+     op=0x3f | op=0x39 | op=0x35 | op=0x21 | op=0x31 | op=0x37 | op=0x23 |
+     op=0x33)) ... & PRIMARY_OP
+{
+    local data:2; deref_read16(data, PRIMARY_OP);
+
+    C = C & data;
+    flag16_NZ(C);
+}
+
+# ASL 8 bit.
+macro do_asl8(_out, _data) {
+    local data:1 = _data;
+    local result:1 = data << 1;
+
+    flag8_NZ(result);
+    CF = data[7,1];
+
+    _out = result;
+}
+:ASL SHIFT_OP    is (ctx_MF=1 &
+    (op=0x0e | op=0x06 | op=0x1e | op=0x16)) ... & SHIFT_OP
+{
+    local data:1; deref_read8(data, SHIFT_OP);
+    local result:1; do_asl8(result, data);
+    deref_write8(result, SHIFT_OP);
+}
+:ASL "A"    is ctx_MF=1 & op=0x0a
+{
+    local data:1 = A;
+    local result:1; do_asl8(result, data);
+    A = result;
+}
+
+# ASL 16 bit.
+macro do_asl16(_out, _data) {
+    local data:2 = _data;
+    local result:2 = data << 1;
+
+    flag16_NZ(result);
+    CF = data[15,1];
+
+    _out = result;
+}
+:ASL SHIFT_OP    is (ctx_MF=0 &
+    (op=0x0e | op=0x06 | op=0x1e | op=0x16)) ... & SHIFT_OP
+{
+    local data:2; deref_read16(data, SHIFT_OP);
+    local result:2; do_asl16(result, data);
+    deref_write16(result, SHIFT_OP);
+}
+:ASL "A"    is ctx_MF=0 & op=0x0a
+{
+    local data:2 = C;
+    local result:2; do_asl16(result, data);
+    C = result;
+}
+
+:BCC MemPCRelBra    is op=0x90; MemPCRelBra
+{
+    if (CF==0) goto MemPCRelBra;
+}
+
+:BCS MemPCRelBra    is op=0xb0; MemPCRelBra
+{
+    if (CF==1) goto MemPCRelBra;
+}
+
+:BEQ MemPCRelBra    is op=0xf0; MemPCRelBra
+{
+    if (ZF==1) goto MemPCRelBra;
+}
+
+BIT_OP: SEC_OP_X    is (aaa=1 & cc=0) ... & SEC_OP_X  { export SEC_OP_X; }
+BIT_OP: RefImmMF    is op=0x89; RefImmMF  { export RefImmMF; }
+
+# BIT 8 bit.
+:BIT BIT_OP    is (ctx_MF=1 &
+    (op=0x89 | op=0x2c | op=0x24 | op=0x3c | op=0x34) & op) ... & BIT_OP
+{
+    local data:1; deref_read8(data, BIT_OP);
+    local is_immediate:1 = op:1 == 0x89;
+
+    if (is_immediate) goto <skip_flags>;
+    flag8_N(data);
+    VF = (data & 0x40) != 0;
+
+    <skip_flags>
+    local result:1 = A & data;
+    flag8_Z(result);
+}
+
+# BIT 16 bit.
+:BIT BIT_OP    is (ctx_MF=0 &
+    (op=0x89 | op=0x2c | op=0x24 | op=0x3c | op=0x34) & op) ... & BIT_OP
+{
+    local data:2; deref_read16(data, BIT_OP);
+    local is_immediate:1 = op:1 == 0x89;
+
+    if (is_immediate) goto <skip_flags>;
+    flag16_N(data);
+    VF = (data & 0x4000) != 0;
+
+    <skip_flags>
+    local result:2 = C & data;
+    flag16_Z(result);
+}
+
+:BMI MemPCRelBra    is op=0x30; MemPCRelBra
+{
+    if (NF==1) goto MemPCRelBra;
+}
+
+:BNE MemPCRelBra    is op=0xd0; MemPCRelBra
+{
+    if (ZF==0) goto MemPCRelBra;
+}
+
+:BPL MemPCRelBra    is op=0x10; MemPCRelBra
+{
+    if (NF==0) goto MemPCRelBra;
+}
+
+:BRA MemPCRelBra    is op=0x80; MemPCRelBra
+{
+    goto MemPCRelBra;
+}
+
+# BRK native.
+:BRK $unused8    is (ctx_EF=0 & op=0x00); unused8
+{
+    local this_pc_full:3 = inst_start;
+    local this_pc:2 = this_pc_full:2;
+    local pc_inc:2 = this_pc + 2;
+
+    push8_native(PBR);
+    push16_native(pc_inc);
+    push_status_native();
+    IF = 1;
+    DF = 0;
+    PBR = 0;
+
+    local target:3 = zext(*:2 0x00FFE6:3);
+    goto [target];
+}
+
+# BRK emulation.
+# UNKNOWN: is BF set when jumping to the handler, or is BF only set on the stack?
+:BRK $unused8    is (ctx_EF=1 & op=0x00); unused8
+{
+    local this_pc_full:3 = inst_start;
+    local this_pc:2 = this_pc_full:2;
+    local pc_inc:2 = this_pc + 2;
+
+    push16_emulation(pc_inc);
+    local save_bf:1 = BF;  BF = 1;  push_status_emulation();  BF = save_bf;
+    IF = 1;
+    DF = 0;
+
+    local target:3 = zext(*:2 0x00FFFE:3);
+    goto [target];
+}
+
+:BRL MemPCRelLongBra    is op=0x82; MemPCRelLongBra
+{
+    goto MemPCRelLongBra;
+}
+
+:BVC MemPCRelBra    is op=0x50; MemPCRelBra
+{
+    if (VF==0) goto MemPCRelBra;
+}
+
+:BVS MemPCRelBra    is op=0x70; MemPCRelBra
+{
+    if (VF==1) goto MemPCRelBra;
+}
+
+:CLC    is op=0x18
+{
+    CF = 0;
+}
+
+:CLD    is op=0xD8
+{
+    DF = 0;
+}
+
+:CLI    is op=0x58
+{
+    IF = 0;
+}
+
+:CLV    is op=0xB8
+{
+    VF = 0;
+}
+
+# CMP 8 bit.
+:CMP PRIMARY_OP    is (ctx_MF=1 &
+    (op=0xc9 | op=0xcd | op=0xcf | op=0xc5 | op=0xd2 | op=0xc7 | op=0xdd |
+     op=0xdf | op=0xd9 | op=0xd5 | op=0xc1 | op=0xd1 | op=0xd7 | op=0xc3 |
+     op=0xd3)) ... & PRIMARY_OP
+{
+    local data:1; deref_read8(data, PRIMARY_OP);
+    local result:4;
+
+    result = sext(A) - sext(data);
+    flag8_NZ(result:1);
+    CF = result s>= 0;
+}
+
+# CMP 16 bit.
+:CMP PRIMARY_OP    is (ctx_MF=0 &
+    (op=0xc9 | op=0xcd | op=0xcf | op=0xc5 | op=0xd2 | op=0xc7 | op=0xdd |
+     op=0xdf | op=0xd9 | op=0xd5 | op=0xc1 | op=0xd1 | op=0xd7 | op=0xc3 |
+     op=0xd3)) ... & PRIMARY_OP
+{
+    local data:2; deref_read16(data, PRIMARY_OP);
+    local result:4;
+
+    result = sext(C) - sext(data);
+    flag16_NZ(result:2);
+    CF = result s>= 0;
+}
+
+# COP native.
+:COP $unused8    is (ctx_EF=0 & op=0x02); unused8
+{
+    local this_pc_full:3 = inst_start;
+    local this_pc:2 = this_pc_full:2;
+    local pc_inc:2 = this_pc + 2;
+
+    push8_native(PBR);
+    push16_native(pc_inc);
+    push_status_native();
+    IF = 1;
+    DF = 0;
+    PBR = 0;
+
+    local target:3 = zext(*:2 0x00FFE4:3);
+    goto [target];
+}
+
+# COP emulation.
+:COP $unused8    is (ctx_EF=1 & op=0x02); unused8
+{
+    local this_pc_full:3 = inst_start;
+    local this_pc:2 = this_pc_full:2;
+    local pc_inc:2 = this_pc + 2;
+
+    push16_emulation(pc_inc);
+    push_status_emulation();
+    IF = 1;
+    DF = 0;
+
+    local target:3 = zext(*:2 0x00FFF4:3);
+    goto [target];
+}
+
+CPXY_OP: SEC_OP_COMMON    is (cc=0) ... & SEC_OP_COMMON  { export SEC_OP_COMMON; }
+CPXY_OP: RefImmXF    is bbb=0; RefImmXF  { export RefImmXF; }
+
+# CPX 8 bit.
+:CPX CPXY_OP    is (ctx_XF=1 & (op=0xe0 | op=0xec | op=0xe4)) ... & CPXY_OP {
+    local data:1; deref_read8(data, CPXY_OP);
+    local result:4 = sext(XLow) - sext(data);
+    flag8_NZ(result:1);
+    CF = result s>= 0;
+}
+
+# CPX 16 bit.
+:CPX CPXY_OP    is (ctx_XF=0 & (op=0xe0 | op=0xec | op=0xe4)) ... & CPXY_OP {
+    local data:2; deref_read16(data, CPXY_OP);
+    local result:4 = sext(X) - sext(data);
+    flag16_NZ(result:2);
+    CF = result s>= 0;
+}
+
+# CPY 8 bit.
+:CPY CPXY_OP    is (ctx_XF=0 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_OP {
+    local data:1; deref_read8(data, CPXY_OP);
+    local result:4 = sext(YLow) - sext(data);
+    flag8_NZ(result:1);
+    CF = result s>= 0;
+}
+
+# CPY 16 bit.
+:CPY CPXY_OP    is (ctx_XF=1 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_OP {
+    local data:2; deref_read16(data, CPXY_OP);
+    local result:4 = sext(Y) - sext(data);
+    flag16_NZ(result:2);
+    CF = result s>= 0;
+}
+
+DEC_INC_OP: SEC_OP_X    is (cc=2) ... & SEC_OP_X  { export SEC_OP_X; }
+# DEC_INC_OP should also include the accumulator addressing mode, but this is handled separately
+# by each instruction.
+
+# DEC 8 bit.
+macro do_dec8(_out, _data) {
+    local data:1 = _data;
+    local result:1 = data - 1;
+    flag8_NZ(result);
+    _out = result;
+}
+:DEC DEC_INC_OP    is (ctx_MF=1 &
+    (op=0xce | op=0xc6 | op=0xde | op=0xd6)) ... & DEC_INC_OP
+{
+    local data:1; deref_read8(data, DEC_INC_OP);
+    local result:1; do_dec8(result, data);
+    deref_write8(result, DEC_INC_OP);
+}
+:DEC "A"    is ctx_MF=1 & op=0x3a
+{
+    local data:1 = A;
+    local result:1; do_dec8(result, data);
+    A = result;
+}
+
+# DEC 16 bit.
+macro do_dec16(_out, _data) {
+    local data:2 = _data;
+    local result:2 = data - 1;
+    flag16_NZ(result);
+    _out = result;
+}
+:DEC DEC_INC_OP    is (ctx_MF=0 &
+    (op=0xce | op=0xc6 | op=0xde | op=0xd6)) ... & DEC_INC_OP
+{
+    local data:2; deref_read16(data, DEC_INC_OP);
+    local result:2; do_dec16(result, data);
+    deref_write16(result, DEC_INC_OP);
+}
+:DEC "A"    is ctx_MF=0 & op=0x3a
+{
+    local data:2 = C;
+    local result:2; do_dec16(result, data);
+    C = result;
+}
+
+# DEX 8 bit.
+:DEX    is (ctx_XF=1 & op=0xca)
+{
+    local result:1 = XLow - 1;
+    flag8_NZ(result);
+    XLow = result;
+}
+
+# DEX 16 bit.
+:DEX    is (ctx_XF=0 & op=0xca)
+{
+    local result:2 = X - 1;
+    flag16_NZ(result);
+    X = result;
+}
+
+# DEY 8 bit.
+:DEY    is (ctx_XF=1 & op=0x88)
+{
+    local result:1 = YLow - 1;
+    flag8_NZ(result);
+    YLow = result;
+}
+
+# DEY 16 bit.
+:DEY    is (ctx_XF=0 & op=0x88)
+{
+    local result:2 = Y - 1;
+    flag16_NZ(result);
+    Y = result;
+}
+
+# EOR 8 bit.
+:EOR PRIMARY_OP    is (ctx_MF=1 &
+    (op=0x49 | op=0x4d | op=0x4f | op=0x45 | op=0x52 | op=0x47 | op=0x5d |
+     op=0x5f | op=0x59 | op=0x55 | op=0x41 | op=0x51 | op=0x57 | op=0x43 |
+     op=0x53)) ... & PRIMARY_OP
+{
+    local data:1; deref_read8(data, PRIMARY_OP);
+
+    A = A ^ data;
+    flag8_NZ(A);
+}
+
+# EOR 16 bit.
+:EOR PRIMARY_OP    is (ctx_MF=0 &
+    (op=0x49 | op=0x4d | op=0x4f | op=0x45 | op=0x52 | op=0x47 | op=0x5d |
+     op=0x5f | op=0x59 | op=0x55 | op=0x41 | op=0x51 | op=0x57 | op=0x43 |
+     op=0x53)) ... & PRIMARY_OP
+{
+    local data:2; deref_read16(data, PRIMARY_OP);
+
+    C = C ^ data;
+    flag16_NZ(C);
+}
+
+# INC 8 bit.
+macro do_inc8(_out, _data) {
+    local data:1 = _data;
+    local result:1 = data + 1;
+    flag8_NZ(result);
+    _out = result;
+}
+:INC DEC_INC_OP    is (ctx_MF=1 &
+    (op=0xee | op=0xe6 | op=0xfe | op=0xf6)) ... & DEC_INC_OP
+{
+    local data:1; deref_read8(data, DEC_INC_OP);
+    local result:1; do_inc8(result, data);
+    deref_write8(result, DEC_INC_OP);
+}
+:INC "A"    is ctx_MF=1 & op=0x1a
+{
+    local data:1 = A;
+    local result:1; do_inc8(result, data);
+    A = result;
+}
+
+# INC 16 bit.
+macro do_inc16(_out, _data) {
+    local data:2 = _data;
+    local result:2 = data + 1;
+    flag16_NZ(result);
+    _out = result;
+}
+:INC DEC_INC_OP    is (ctx_MF=0 &
+    (op=0xee | op=0xe6 | op=0xfe | op=0xf6)) ... & DEC_INC_OP
+{
+    local data:2; deref_read16(data, DEC_INC_OP);
+    local result:2; do_inc16(result, data);
+    deref_write16(result, DEC_INC_OP);
+}
+:INC "A"    is ctx_MF=0 & op=0x1a
+{
+    local data:2 = C;
+    local result:2; do_inc16(result, data);
+    C = result;
+}
+
+# INX 8 bit.
+:INX    is (ctx_XF=1 & op=0xe8)
+{
+    local result:1 = XLow + 1;
+    flag8_NZ(result);
+    XLow = result;
+}
+
+# INX 16 bit.
+:INX    is (ctx_XF=0 & op=0xe8)
+{
+    local result:2 = X + 1;
+    flag16_NZ(result);
+    X = result;
+}
+
+# INY 8 bit.
+:INY    is (ctx_XF=1 & op=0xc8)
+{
+    local result:1 = YLow + 1;
+    flag8_NZ(result);
+    YLow = result;
+}
+
+# INY 16 bit.
+:INY    is (ctx_XF=0 & op=0xc8)
+{
+    local result:2 = Y + 1;
+    flag16_NZ(result);
+    Y = result;
+}
+
+JMP_OP: MemAbsJmp    is op=0x4c; MemAbsJmp  { export MemAbsJmp; }
+JMP_OP: MemAbsIndJmp    is op=0x6c; MemAbsIndJmp  { export MemAbsIndJmp; }
+JMP_OP: MemAbsIdxIndJmp    is op=0x7c; MemAbsIdxIndJmp  { export MemAbsIdxIndJmp; }
+
+# JMP
+:JMP JMP_OP    is (op=0x4c | op=0x6c | op=0x7c) ... & JMP_OP
+{
+    goto JMP_OP;
+}
+
+JML_OP: MemAbsLongJmp    is op=0x5c; MemAbsLongJmp  { export MemAbsLongJmp; }
+JML_OP: MemAbsIndLongJmp    is op=0xdc; MemAbsIndLongJmp  { export MemAbsIndLongJmp; }
+
+# JML
+:JML JML_OP    is (op=0x5c | op=0xdc) ... & JML_OP
+{
+    goto JML_OP;
+}
+
+macro jsl_calculate_push_addr(_out) {
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+    local this_pc:2 = this_pc_full:2;
+
+    # "The address of the last instruction byte (the fourth instruction byte, or the third operand
+    # byte), not the address of the next instruction."
+    local push_addr:3 = (zext(this_pbr) << 16) | (zext(this_pc + 3));
+    _out = push_addr;
+}
+
+# JSL native.
+:JSL MemAbsLongJmp    is ctx_EF=0 & op=0x22; MemAbsLongJmp
+{
+    local push_addr:3; jsl_calculate_push_addr(push_addr);
+    push24_native(push_addr);
+    call MemAbsLongJmp;
+}
+
+# JSL emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:JSL MemAbsLongJmp    is ctx_EF=1 & op=0x22; MemAbsLongJmp
+{
+    local push_addr:3; jsl_calculate_push_addr(push_addr);
+    # "Although the high byte of the stack register is consistently forced to one, new 65816
+    # opcodes executed in the emulation mode will not wrap the stack if the low byte over- or
+    # underflowed in the middle of an instruction."
+    push24_native(push_addr);
+    SPHigh = 1;
+    call MemAbsLongJmp;
+}
+
+JSR_OP: MemAbsJmp    is op=0x20; MemAbsJmp  { export MemAbsJmp; }
+JSR_OP: MemAbsIdxIndJmp    is op=0xfc; MemAbsIdxIndJmp  { export MemAbsIdxIndJmp; }
+
+macro jsr_calculate_push_addr(_out) {
+    local this_pc_full:3 = inst_start;
+    local this_pc:2 = this_pc_full:2;
+
+    # "The address of the last instruction byte (the third byte of a three-byte instruction...),
+    # not the address of the next instruction."
+    local push_addr:2 = (this_pc + 2);
+    _out = push_addr;
+}
+
+# JSR native, absolute addressing or absolute indexed indirect addressing.
+:JSR JSR_OP    is ctx_EF=0 & (op=0x20 | op=0xfc) ... & JSR_OP
+{
+    local push_addr:2; jsr_calculate_push_addr(push_addr);
+    push16_native(push_addr);
+    call JSR_OP;
+}
+
+# JSR emulation, absolute addressing.
+:JSR JSR_OP    is ctx_EF=1 & op=0x20 ... & JSR_OP
+{
+    local push_addr:2; jsr_calculate_push_addr(push_addr);
+    push16_emulation(push_addr);
+    call JSR_OP;
+}
+
+# JSR emulation, absolute indexed indirect addressing.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:JSR JSR_OP    is ctx_EF=1 & op=0xfc ... & JSR_OP
+{
+    local push_addr:2; jsr_calculate_push_addr(push_addr);
+    push16_native(push_addr);
+    SPHigh = 1;
+    call JSR_OP;
+}
+
+# LDA 8 bit.
+:LDA PRIMARY_OP    is (ctx_MF=1 &
+    (op=0xa9 | op=0xad | op=0xaf | op=0xa5 | op=0xb2 | op=0xa7 | op=0xbd |
+     op=0xbf | op=0xb9 | op=0xb5 | op=0xa1 | op=0xb1 | op=0xb7 | op=0xa3 |
+     op=0xb3)) ... & PRIMARY_OP
+{
+    local data:1; deref_read8(data, PRIMARY_OP);
+
+    A = data;
+    flag8_NZ(A);
+}
+
+# LDA 16 bit.
+:LDA PRIMARY_OP    is (ctx_MF=0 &
+    (op=0xa9 | op=0xad | op=0xaf | op=0xa5 | op=0xb2 | op=0xa7 | op=0xbd |
+     op=0xbf | op=0xb9 | op=0xb5 | op=0xa1 | op=0xb1 | op=0xb7 | op=0xa3 |
+     op=0xb3)) ... & PRIMARY_OP
+{
+    local data:2; deref_read16(data, PRIMARY_OP);
+
+    C = data;
+    flag16_NZ(C);
+}
+
+LDX_OP: SEC_OP_Y    is (aaa=5) ... & SEC_OP_Y  { export SEC_OP_Y; }
+LDX_OP: RefImmXF    is bbb=0; RefImmXF  { export RefImmXF; }
+
+# LDX 8 bit.
+:LDX LDX_OP    is (ctx_XF=1 &
+    (op=0xa2 | op=0xae | op=0xa6 | op=0xbe | op=0xb6)) ... & LDX_OP
+{
+    local data:1; deref_read8(data, LDX_OP);
+    flag8_NZ(data);
+    XLow = data;
+}
+
+# LDX 16 bit.
+:LDX LDX_OP    is (ctx_XF=0 &
+    (op=0xa2 | op=0xae | op=0xa6 | op=0xbe | op=0xb6)) ... & LDX_OP
+{
+    local data:2; deref_read16(data, LDX_OP);
+    flag16_NZ(data);
+    X = data;
+}
+
+LDY_OP: SEC_OP_X    is (aaa=5) ... & SEC_OP_X  { export SEC_OP_X; }
+LDY_OP: RefImmXF    is bbb=0; RefImmXF  { export RefImmXF; }
+
+# LDY 8 bit.
+:LDY LDY_OP    is (ctx_XF=1 &
+    (op=0xa0 | op=0xac | op=0xa4 | op=0xbc | op=0xb4)) ... & LDY_OP
+{
+    local data:1; deref_read8(data, LDY_OP);
+    flag8_NZ(data);
+    YLow = data;
+}
+
+# LDY 16 bit.
+:LDY LDY_OP    is (ctx_XF=0 &
+    (op=0xa0 | op=0xac | op=0xa4 | op=0xbc | op=0xb4)) ... & LDY_OP
+{
+    local data:2; deref_read16(data, LDY_OP);
+    flag16_NZ(data);
+    Y = data;
+}
+
+# LSR 8 bit.
+macro do_lsr8(_out, _data) {
+    local data:1 = _data;
+    local result:1 = data >> 1;
+
+    flag8_Z(result);
+    NF = 0;
+    CF = data[0,1];
+
+    _out = result;
+}
+:LSR SHIFT_OP    is (ctx_MF=1 &
+    (op=0x4e | op=0x46 | op=0x5e | op=0x56)) ... & SHIFT_OP
+{
+    local data:1; deref_read8(data, SHIFT_OP);
+    local result:1; do_lsr8(result, data);
+    deref_write8(result, SHIFT_OP);
+}
+:LSR "A"    is ctx_MF=1 & op=0x4a
+{
+    local data:1 = A;
+    local result:1; do_lsr8(result, data);
+    A = result;
+}
+
+# LSR 16 bit.
+macro do_lsr16(_out, _data) {
+    local data:2 = _data;
+    local result:2 = data >> 1;
+
+    flag16_Z(result);
+    NF = 0;
+    CF = data[0,1];
+
+    _out = result;
+}
+:LSR SHIFT_OP    is (ctx_MF=0 &
+    (op=0x4e | op=0x46 | op=0x5e | op=0x56)) ... & SHIFT_OP
+{
+    local data:2; deref_read16(data, SHIFT_OP);
+    local result:2; do_lsr16(result, data);
+    deref_write16(result, SHIFT_OP);
+}
+:LSR "A"    is ctx_MF=0 & op=0x4a
+{
+    local data:2 = C;
+    local result:2; do_lsr16(result, data);
+    C = result;
+}
+
+# MVN 8 bit.
+:MVN srcbk,destbk    is (ctx_XF=1 & (op=0x54 ; destbk; srcbk))
+{
+    local src_bank:1 = srcbk;
+    local dest_bank:1 = destbk;
+    DBR = dest_bank;
+    local src_addr:3;
+    local dest_addr:3;
+
+    <move_loop>
+    pack_bank_addr16(src_addr, src_bank, zext(XLow));
+    pack_bank_addr16(dest_addr, dest_bank, zext(YLow));
+    *:1 dest_addr = *:1 src_addr;
+
+    XLow = XLow + 1;
+    YLow = YLow + 1;
+    C = C - 1;
+
+    if (C != 0xFFFF) goto <move_loop>;
+}
+
+# MVN 16 bit.
+:MVN srcbk,destbk    is (ctx_XF=0 & (op=0x54 ; destbk; srcbk))
+{
+    local src_bank:1 = srcbk;
+    local dest_bank:1 = destbk;
+    DBR = dest_bank;
+    local src_addr:3;
+    local dest_addr:3;
+
+    <move_loop>
+    pack_bank_addr16(src_addr, src_bank, X);
+    pack_bank_addr16(dest_addr, dest_bank, Y);
+    *:1 dest_addr = *:1 src_addr;
+
+    X = X + 1;
+    Y = Y + 1;
+    C = C - 1;
+
+    if (C != 0xFFFF) goto <move_loop>;
+}
+
+# MVP 8 bit.
+:MVP srcbk,destbk    is (ctx_XF=1 & (op=0x44 ; destbk; srcbk))
+{
+    local src_bank:1 = srcbk;
+    local dest_bank:1 = destbk;
+    DBR = dest_bank;
+    local src_addr:3;
+    local dest_addr:3;
+
+    <move_loop>
+    pack_bank_addr16(src_addr, src_bank, zext(XLow));
+    pack_bank_addr16(dest_addr, dest_bank, zext(YLow));
+    *:1 dest_addr = *:1 src_addr;
+
+    XLow = XLow - 1;
+    YLow = YLow - 1;
+    C = C - 1;
+
+    if (C != 0xFFFF) goto <move_loop>;
+}
+
+# MVP 16 bit.
+:MVP srcbk,destbk    is (ctx_XF=0 & (op=0x44 ; destbk; srcbk))
+{
+    local src_bank:1 = srcbk;
+    local dest_bank:1 = destbk;
+    DBR = dest_bank;
+    local src_addr:3;
+    local dest_addr:3;
+
+    <move_loop>
+    pack_bank_addr16(src_addr, src_bank, X);
+    pack_bank_addr16(dest_addr, dest_bank, Y);
+    *:1 dest_addr = *:1 src_addr;
+
+    X = X - 1;
+    Y = Y - 1;
+    C = C - 1;
+
+    if (C != 0xFFFF) goto <move_loop>;
+}
+
+:NOP    is op=0xEA  {}
+
+# ORA 8 bit.
+:ORA PRIMARY_OP    is (ctx_MF=1 &
+    (op=0x09 | op=0x0d | op=0x0f | op=0x05 | op=0x12 | op=0x07 | op=0x1d |
+     op=0x1f | op=0x19 | op=0x15 | op=0x01 | op=0x11 | op=0x17 | op=0x03 |
+     op=0x13)) ... & PRIMARY_OP
+{
+    local data:1; deref_read8(data, PRIMARY_OP);
+
+    A = A | data;
+    flag8_NZ(A);
+}
+
+# ORA 16 bit.
+:ORA PRIMARY_OP    is (ctx_MF=0 &
+    (op=0x09 | op=0x0d | op=0x0f | op=0x05 | op=0x12 | op=0x07 | op=0x1d |
+     op=0x1f | op=0x19 | op=0x15 | op=0x01 | op=0x11 | op=0x17 | op=0x03 |
+     op=0x13)) ... & PRIMARY_OP
+{
+    local data:2; deref_read16(data, PRIMARY_OP);
+
+    C = C | data;
+    flag16_NZ(C);
+}
+
+# PEA native.
+:PEA MemStackAbs    is (ctx_EF=0 & op=0xf4; MemStackAbs)
+{
+    push16_native(MemStackAbs);
+}
+# PEA emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:PEA MemStackAbs    is (ctx_EF=1 & op=0xf4; MemStackAbs)
+{
+    push16_native(MemStackAbs);
+    SPHigh = 1;
+}
+
+# PEI native.
+:PEI MemStackInd    is (ctx_EF=0 & op=0xd4; MemStackInd)
+{
+    push16_native(MemStackInd);
+}
+# PEI emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:PEI MemStackInd    is (ctx_EF=1 & op=0xd4; MemStackInd)
+{
+    push16_native(MemStackInd);
+    SPHigh = 1;
+}
+
+# PER native.
+:PER MemStackPCRel    is (ctx_EF=0 & op=0x62; MemStackPCRel)
+{
+    push16_native(MemStackPCRel);
+}
+# PER emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:PER MemStackPCRel    is (ctx_EF=1 & op=0x62; MemStackPCRel)
+{
+    push16_native(MemStackPCRel);
+    SPHigh = 1;
+}
+
+# PHA 8 bit, native.
+:PHA    is (ctx_MF=1 & ctx_EF=0 & op=0x48)
+{
+    push8_native(A);
+}
+# PHA 8 bit, emulation.
+:PHA    is (ctx_MF=1 & ctx_EF=1 & op=0x48)
+{
+    push8_emulation(A);
+}
+
+# PHA 16 bit, native.
+:PHA    is (ctx_MF=0 & ctx_EF=0 & op=0x48)
+{
+    push16_native(C);
+}
+# PHA 16 bit, emulation.
+:PHA    is (ctx_MF=0 & ctx_EF=1 & op=0x48)
+{
+    push16_emulation(C);
+}
+
+# PHB native.
+:PHB    is ctx_EF=0 & op=0x8b
+{
+    push8_native(DBR);
+}
+# PHB emulation.
+:PHB    is ctx_EF=1 & op=0x8b
+{
+    push8_emulation(DBR);
+}
+
+# PHD native.
+:PHD    is ctx_EF=0 & op=0x0b
+{
+    push16_native(DP);
+}
+# PHD emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:PHD    is ctx_EF=1 & op=0x0b
+{
+    push16_native(DP);
+    SPHigh = 1;
+}
+
+# PHK native.
+:PHK    is ctx_EF=0 & op=0x4b
+{
+    push8_native(PBR);
+}
+# PHK emulation.
+:PHK    is ctx_EF=1 & op=0x4b
+{
+    push8_emulation(PBR);
+}
+
+# PHP native.
+:PHP    is (ctx_EF=0 & op=0x08)
+{
+    push_status_native();
+}
+# PHP emulation.
+:PHP    is (ctx_EF=1 & op=0x08)
+{
+    push_status_emulation();
+}
+
+# PHX 8 bit, native.
+:PHX    is (ctx_XF=1 & ctx_EF=0 & op=0xda)
+{
+    push8_native(XLow);
+}
+# PHX 8 bit, emulation.
+:PHX    is (ctx_XF=1 & ctx_EF=1 & op=0xda)
+{
+    push8_emulation(XLow);
+}
+
+# PHX 16 bit, native.
+:PHX    is (ctx_XF=0 & ctx_EF=0 & op=0xda)
+{
+    push16_native(X);
+}
+# PHX 16 bit, emulation.
+:PHX    is (ctx_XF=0 & ctx_EF=1 & op=0xda)
+{
+    push16_emulation(X);
+}
+
+# PHY 8 bit, native.
+:PHY    is (ctx_XF=1 & ctx_EF=0 & op=0x5a)
+{
+    push8_native(YLow);
+}
+# PHY 8 bit, emulation.
+:PHY    is (ctx_XF=1 & ctx_EF=1 & op=0x5a)
+{
+    push8_emulation(YLow);
+}
+
+# PHY 16 bit, native.
+:PHY    is (ctx_XF=0 & ctx_EF=0 & op=0x5a)
+{
+    push16_native(Y);
+}
+# PHY 16 bit, emulation.
+:PHY    is (ctx_XF=0 & ctx_EF=1 & op=0x5a)
+{
+    push16_emulation(Y);
+}
+
+# PLA 8 bit, native.
+:PLA    is (ctx_MF=1 & ctx_EF=0 & op=0x68)
+{
+    pull8_native(A);
+    flag8_NZ(A);
+}
+# PLA 8 bit, emulation.
+:PLA    is (ctx_MF=1 & ctx_EF=1 & op=0x68)
+{
+    pull8_emulation(A);
+    flag8_NZ(A);
+}
+
+# PLA 16 bit, native.
+:PLA    is (ctx_MF=0 & ctx_EF=0 & op=0x68)
+{
+    pull16_native(C);
+    flag16_NZ(C);
+}
+# PLA 16 bit, emulation.
+:PLA    is (ctx_MF=0 & ctx_EF=1 & op=0x68)
+{
+    pull16_emulation(C);
+    flag16_NZ(C);
+}
+
+# PLB native.
+:PLB    is ctx_EF=0 & op=0xab
+{
+    pull8_native(DBR);
+    flag8_NZ(DBR);
+}
+# PLB emulation.
+:PLB    is ctx_EF=1 & op=0xab
+{
+    pull8_emulation(DBR);
+    flag8_NZ(DBR);
+}
+
+# PLD native.
+:PLD    is ctx_EF=0 & op=0x2b
+{
+    pull16_native(DP);
+    flag16_NZ(DP);
+}
+# PLD emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:PLD    is ctx_EF=1 & op=0x2b
+{
+    pull16_native(DP);
+    flag16_NZ(DP);
+    SPHigh = 1;
+}
+
+# PLP native.
+# UNSUPPORTED: pulling the context flags MF and XF.
+define pcodeop unknown_native_status_pull;
+:PLP    is (ctx_EF=0 & op=0x28)
+{
+    pull_status_native();
+    # Don't know whether XF is now set.
+    local is_x16:1 = unknown_native_status_pull();
+
+    if (is_x16) goto <skip_shrink>;
+    # "When a sixteen-bit index register is switched to eight bits, the high byte is lost
+    # irretrievably and replaced by a zero."
+    XHigh = 0;
+    YHigh = 0;
+
+    <skip_shrink>
+}
+# PLP emulation.
+:PLP    is (ctx_EF=1 & op=0x28)
+{
+    pull_status_emulation();
+}
+
+# PLX 8 bit, native.
+:PLX    is (ctx_XF=1 & ctx_EF=0 & op=0xfa)
+{
+    pull8_native(XLow);
+    flag8_NZ(XLow);
+}
+# PLX 8 bit, emulation.
+:PLX    is (ctx_XF=1 & ctx_EF=1 & op=0xfa)
+{
+    pull8_emulation(XLow);
+    flag8_NZ(XLow);
+}
+
+# PLX 16 bit, native.
+:PLX    is (ctx_XF=0 & ctx_EF=0 & op=0xfa)
+{
+    pull16_native(X);
+    flag16_NZ(X);
+}
+# PLX 16 bit, emulation.
+:PLX    is (ctx_XF=0 & ctx_EF=1 & op=0xfa)
+{
+    pull16_emulation(X);
+    flag16_NZ(X);
+}
+
+# PLY 8 bit, native.
+:PLY    is (ctx_XF=1 & ctx_EF=0 & op=0x7a)
+{
+    pull8_native(YLow);
+    flag8_NZ(YLow);
+}
+# PLY 8 bit, emulation.
+:PLY    is (ctx_XF=1 & ctx_EF=1 & op=0x7a)
+{
+    pull8_emulation(YLow);
+    flag8_NZ(YLow);
+}
+
+# PLY 16 bit, native.
+:PLY    is (ctx_XF=0 & ctx_EF=0 & op=0x7a)
+{
+    pull16_native(Y);
+    flag16_NZ(Y);
+}
+# PLY 16 bit, emulation.
+:PLY    is (ctx_XF=0 & ctx_EF=1 & op=0x7a)
+{
+    pull16_emulation(Y);
+    flag16_NZ(Y);
+}
+
+# REP native. Gross, but necessary to be able to reset the MF and XF context flags.
+macro do_rep(op_nf, op_vf, op_df, op_if, op_zf, op_cf) {
+    NF = NF && !(op_nf);
+    VF = VF && !(op_vf);
+    DF = DF && !(op_df);
+    IF = IF && !(op_if);
+    ZF = ZF && !(op_zf);
+    CF = CF && !(op_cf);
+}
+:REP "#$"op_flags    is (ctx_EF=0 & op=0xc2; op_flags & op_mf=0 & op_xf=0
+    & op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+{
+    do_rep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+:REP "#$"op_flags    is (ctx_EF=0 & op=0xc2; op_flags & op_mf=0 & op_xf=1
+    & op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+    [ ctx_XF=0; globalset(inst_start, ctx_XF); ]
+{
+    do_rep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+:REP "#$"op_flags    is (ctx_EF=0 & op=0xc2; op_flags & op_mf=1 & op_xf=0
+    & op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+    [ ctx_MF=0; globalset(inst_start, ctx_MF); ]
+{
+    do_rep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+:REP "#$"op_flags    is (ctx_EF=0 & op=0xc2; op_flags & op_mf=1 & op_xf=1
+    & op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+    [ ctx_XF=0; globalset(inst_start, ctx_XF);
+      ctx_MF=0; globalset(inst_start, ctx_MF); ]
+{
+    do_rep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+
+# REP emulation.
+# "Neither the break flag nor bit five (the 6502’s undefined flag bit) are affected by REP."
+:REP "#$"op_flags    is (ctx_EF=1 & op=0xc2; op_flags
+    & op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+{
+    do_rep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+
+# ROL 8 bit.
+macro do_rol8(_out, _data) {
+    local data:1 = _data;
+    local result:1 = data << 1;
+    result = result | CF;
+    CF = data[7,1];
+    flag8_NZ(result);
+    _out = result;
+}
+:ROL SHIFT_OP    is (ctx_MF=1 &
+    (op=0x2e | op=0x26 | op=0x3e | op=0x36)) ... & SHIFT_OP
+{
+    local data:1; deref_read8(data, SHIFT_OP);
+    local result:1; do_rol8(result, data);
+    deref_write8(result, SHIFT_OP);
+}
+:ROL "A"    is ctx_MF=1 & op=0x2a
+{
+    local data:1 = A;
+    local result:1; do_rol8(result, data);
+    A = result;
+}
+
+# ROL 16 bit.
+macro do_rol16(_out, _data) {
+    local data:2 = _data;
+    local result:2 = data << 1;
+    result = result | zext(CF);
+    CF = data[15,1];
+    flag16_NZ(result);
+    _out = result;
+}
+:ROL SHIFT_OP    is (ctx_MF=0 &
+    (op=0x2e | op=0x26 | op=0x3e | op=0x36)) ... & SHIFT_OP
+{
+    local data:2; deref_read16(data, SHIFT_OP);
+    local result:2; do_rol16(result, data);
+    deref_write16(result, SHIFT_OP);
+}
+:ROL "A"    is ctx_MF=0 & op=0x2a
+{
+    local data:2 = C;
+    local result:2; do_rol16(result, data);
+    C = result;
+}
+
+# ROR 8 bit.
+macro do_ror8(_out, _data) {
+    local data:1 = _data;
+    local result:1 = data >> 1;
+    result[7,1] = CF;
+    CF = data[0,1];
+    flag8_NZ(result);
+    _out = result;
+}
+:ROR SHIFT_OP    is (ctx_MF=1 &
+    (op=0x6e | op=0x66 | op=0x7e | op=0x76)) ... & SHIFT_OP
+{
+    local data:1; deref_read8(data, SHIFT_OP);
+    local result:1; do_ror8(result, data);
+    deref_write8(result, SHIFT_OP);
+}
+:ROR "A"    is ctx_MF=1 & op=0x6a
+{
+    local data:1 = A;
+    local result:1; do_ror8(result, data);
+    A = result;
+}
+
+# ROR 16 bit.
+macro do_ror16(_out, _data) {
+    local data:2 = _data;
+    local result:2 = data >> 1;
+    result[15,1] = CF;
+    CF = data[0,1];
+    flag16_NZ(result);
+    _out = result;
+}
+:ROR SHIFT_OP    is (ctx_MF=0 &
+    (op=0x6e | op=0x66 | op=0x7e | op=0x76)) ... & SHIFT_OP
+{
+    local data:2; deref_read16(data, SHIFT_OP);
+    local result:2; do_ror16(result, data);
+    deref_write16(result, SHIFT_OP);
+}
+:ROR "A"    is ctx_MF=0 & op=0x6a
+{
+    local data:2 = C;
+    local result:2; do_ror16(result, data);
+    C = result;
+}
+
+# RTI native.
+# UNSUPPORTED: pulling the context flags MF and XF.
+:RTI    is (ctx_EF=0 & op=0x40)
+{
+    pull_status_native();
+    local is_x16:1 = unknown_native_status_pull();
+
+    if (is_x16) goto <skip_shrink>;
+    # "When a sixteen-bit index register is switched to eight bits, the high byte is lost
+    # irretrievably and replaced by a zero."
+    XHigh = 0;
+    YHigh = 0;
+
+    <skip_shrink>
+
+    local pc:2;
+    pull16_native(pc);
+
+    # "One extra byte is pulled in the 65802/65816 native mode than in emulation mode, the same
+    # extra byte that is pushed by interrupts in native mode, the program bank register."
+    local pbr:1;
+    pull8_native(pbr);
+
+    # "Unlike the RTS instruction, the program counter address pulled off the stack is the exact
+    # address to return to... It does not need to be incremented as a subroutine’s return address
+    # does."
+    local ret_addr:3 = (zext(pbr) << 16) | zext(pc);
+    goto [ret_addr];
+}
+
+# RTI emulation.
+:RTI    is (ctx_EF=1 & op=0x40)
+{
+    # "Each flag takes the value of its corresponding bit in the stacked status byte, except that
+    # the Break flag is ignored."
+    local save_bf:1 = BF;  pull_status_emulation();  BF = save_bf;
+
+    local pc:2;
+    pull16_emulation(pc);
+
+    # "Unlike the RTS instruction, the program counter address pulled off the stack is the exact
+    # address to return to... It does not need to be incremented as a subroutine’s return address
+    # does."
+    local ret_addr:3 = (zext(PBR) << 16) | zext(pc);
+    goto [ret_addr];
+}
+
+# RTL native.
+:RTL    is ctx_EF=0 & op=0x6b
+{
+    local pc:2;
+    pull16_native(pc);
+    pc = pc + 1;
+
+    local pbr:1;
+    pull8_native(pbr);
+
+    local ret_addr:3 = (zext(pbr) << 16) | zext(pc);
+    return [ret_addr];
+}
+
+# RTL emulation.
+# Does not limit the top byte of the SP to 1 until the end of the instruction execution.
+:RTL    is ctx_EF=1 & op=0x6b
+{
+    local pc:2;
+    pull16_native(pc);
+    pc = pc + 1;
+
+    local pbr:1;
+    pull8_native(pbr);
+
+    local ret_addr:3 = (zext(pbr) << 16) | zext(pc);
+    SPHigh = 1;
+    return [ret_addr];
+}
+
+# RTS native.
+:RTS    is ctx_EF=0 & op=0x60
+{
+    local pc:2;
+    pull16_native(pc);
+    pc = pc + 1;
+
+    local ret_addr:3 = (zext(PBR) << 16) | zext(pc);
+    return [ret_addr];
+}
+# RTS emulation.
+:RTS    is ctx_EF=1 & op=0x60
+{
+    local pc:2;
+    pull16_emulation(pc);
+    pc = pc + 1;
+
+    local ret_addr:3 = (zext(PBR) << 16) | zext(pc);
+    return [ret_addr];
+}
+
+# SBC 8 bit binary.
+:SBC PRIMARY_OP    is (ctx_MF=1 &
+    (op=0xe9 | op=0xed | op=0xef | op=0xe5 | op=0xf2 | op=0xe7 | op=0xfd |
+     op=0xff | op=0xf9 | op=0xf5 | op=0xe1 | op=0xf1 | op=0xf7 | op=0xe3 |
+     op=0xf3)) ... & PRIMARY_OP
+{
+    local is_dec:1 = DF == 1;
+    local not_dec:1 = DF == 0;
+    local do_skip_dec_adjust:1;
+    local data:1; deref_read8(data, PRIMARY_OP);
+    data = ~data;
+    local result:4;
+
+    if (is_dec) goto <decimal>;
+
+#    <binary>
+    result = zext(A) + zext(data) + zext(CF);
+    goto <flags>;
+
+    <decimal>
+    # Units.
+    result = (zext(A) & 0x0f) + (zext(data) & 0x0f) + zext(CF);
+    do_skip_dec_adjust = (result s> 0x0f);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust>;
+    result = result - 0x06;
+    <skip_dec_adjust>
+    CF = (result s> 0x0f);
+    # Tens.
+    result = (zext(A) & 0xf0) + (zext(data) & 0xf0) + (zext(CF) << 4) + (result & 0x0f);
+
+    <flags>
+    VF = (~zext(A ^ data) & (zext(A) ^ result) & 0x80) != 0;
+    local too_big:1 = (result s> 0xff);
+    do_skip_dec_adjust = (not_dec || too_big);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_flags>;
+    result = result - 0x60;
+    <skip_dec_adjust_flags>
+    CF = result s> 0xFF;
+    result8:1 = result:1;
+    flag8_NZ(result8);
+    A = result8;
+}
+
+# SBC 16 bit binary.
+:SBC PRIMARY_OP    is (ctx_MF=0 &
+    (op=0xe9 | op=0xed | op=0xef | op=0xe5 | op=0xf2 | op=0xe7 | op=0xfd |
+     op=0xff | op=0xf9 | op=0xf5 | op=0xe1 | op=0xf1 | op=0xf7 | op=0xe3 |
+     op=0xf3)) ... & PRIMARY_OP
+{
+    local is_dec:1 = DF == 1;
+    local not_dec:1 = DF == 0;
+    local do_skip_dec_adjust:1;
+    local data:2; deref_read16(data, PRIMARY_OP);
+    data = ~data;
+    local result:4;
+
+    if (is_dec) goto <decimal>;
+
+#    <binary>
+    result = zext(C) + zext(data) + zext(CF);
+    goto <flags>;
+
+    <decimal>
+    # Units.
+    result = (zext(C) & 0x0f) + (zext(data) & 0x0f) + zext(CF);
+    do_skip_dec_adjust = (result s> 0x0f);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_1>;
+    result = result - 0x06;
+    <skip_dec_adjust_1>
+    CF = (result s> 0x0f);
+    # Tens.
+    result= (zext(C) & 0xf0) + (zext(data) & 0xf0) + (zext(CF) << 4) + (result & 0x0f);
+    do_skip_dec_adjust = (result s> 0xff);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_2>;
+    result = result - 0x60;
+    <skip_dec_adjust_2>
+    CF = (result s> 0xff);
+    # Hundreds.
+    result = (zext(C) & 0x0f00) + (zext(data) & 0x0f00) + (zext(CF) << 8) + (result & 0xff);
+    do_skip_dec_adjust = (result s> 0x0fff);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_3>;
+    result = result - 0x0600;
+    <skip_dec_adjust_3>
+    CF = (result s> 0x0fff);
+    # Thousands
+    result = (zext(C) & 0xf000) + (zext(data) & 0xf000) + (zext(CF) << 12) + (result & 0x0fff);
+
+    <flags>
+    VF = (~zext(C ^ data) & (zext(C) ^ result) & 0x8000) != 0;
+    local too_big:1 = (result s> 0xffff);
+    do_skip_dec_adjust = (not_dec || too_big);
+    if (do_skip_dec_adjust) goto <skip_dec_adjust_flags>;
+    result = result - 0x6000;
+    <skip_dec_adjust_flags>
+    CF = (result s> 0xFFFF);
+    local result16:2 = result:2;
+    flag16_NZ(result16);
+    C = result16;
+}
+
+:SEC    is op=0x38
+{
+    CF = 1;
+}
+
+:SED    is op=0xf8
+{
+    DF = 1;
+}
+
+:SEI    is op=0x78
+{
+    IF = 1;
+}
+
+# SEP native. Gross, but necessary to be able to set the MF and XF context flags.
+macro do_sep(op_nf, op_vf, op_df, op_if, op_zf, op_cf) {
+    NF = NF || op_nf;
+    VF = VF || op_vf;
+    DF = DF || op_df;
+    IF = IF || op_if;
+    ZF = ZF || op_zf;
+    CF = CF || op_cf;
+}
+:SEP "#$"op_flags    is (ctx_EF=0 & op=0xe2; op_flags & op_mf=0 & op_xf=0 &
+    op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+{
+    do_sep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+:SEP "#$"op_flags    is (ctx_EF=0 & op=0xe2; op_flags & op_mf=0 & op_xf=1 &
+    op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+    [ ctx_XF=1; globalset(inst_start, ctx_XF); ]
+{
+    do_sep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+    # "When a sixteen-bit index register is switched to eight bits, the high byte is lost
+    # irretrievably and replaced by a zero."
+    XHigh = 0;
+    YHigh = 0;
+}
+:SEP "#$"op_flags    is (ctx_EF=0 & op=0xe2; op_flags & op_mf=1 & op_xf=0 &
+    op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+    [ ctx_MF=1; globalset(inst_start, ctx_MF); ]
+{
+    do_sep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+:SEP "#$"op_flags    is (ctx_EF=0 & op=0xe2; op_flags & op_mf=1 & op_xf=1 &
+    op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+    [ ctx_XF=1; globalset(inst_start, ctx_XF);
+      ctx_MF=1; globalset(inst_start, ctx_MF); ]
+{
+    do_sep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+    # "When a sixteen-bit index register is switched to eight bits, the high byte is lost
+    # irretrievably and replaced by a zero."
+    XHigh = 0;
+    YHigh = 0;
+}
+
+# SEP emulation.
+# "Neither the break flag nor bit five (the 6502’s non-flag bit) is affected by SEP."
+:SEP "#$"op_flags    is (ctx_EF=1 & op=0xe2; op_flags &
+    op_nf & op_vf & op_df & op_if & op_zf & op_cf)
+{
+    do_sep(op_nf:1, op_vf:1, op_df:1, op_if:1, op_zf:1, op_cf:1);
+}
+
+# STA 8 bit.
+:STA PRIMARY_OP_NO_IMM    is (ctx_MF=1 &
+    (op=0x8d | op=0x8f | op=0x85 | op=0x92 | op=0x87 | op=0x9d |
+     op=0x9f | op=0x99 | op=0x95 | op=0x81 | op=0x91 | op=0x97 |
+     op=0x83 | op=0x93)) ... & PRIMARY_OP_NO_IMM
+{
+    deref_write8(A, PRIMARY_OP_NO_IMM);
+}
+
+# STA 16 bit.
+:STA PRIMARY_OP_NO_IMM    is (ctx_MF=0 &
+    (op=0x8d | op=0x8f | op=0x85 | op=0x92 | op=0x87 | op=0x9d |
+     op=0x9f | op=0x99 | op=0x95 | op=0x81 | op=0x91 | op=0x97 |
+     op=0x83 | op=0x93)) ... & PRIMARY_OP_NO_IMM
+{
+    deref_write16(C, PRIMARY_OP_NO_IMM);
+}
+
+define pcodeop stop;
+:STP    is op=0xdb
+{
+    stop();
+    local target:3 = zext(*:2 0x00FFFC:3);
+    goto [target];
+}
+
+STX_OP: SEC_OP_COMMON    is SEC_OP_COMMON  { export SEC_OP_COMMON; }
+STX_OP: RefDPIdxY    is bbb=5; RefDPIdxY  { export RefDPIdxY; }
+
+# STX 8 bit.
+:STX STX_OP    is (ctx_XF=1 & (op=0x8e | op=0x86 | op=0x96)) ... & STX_OP
+{
+    deref_write8(XLow, STX_OP);
+}
+
+# STX 16 bit.
+:STX STX_OP    is (ctx_XF=0 & (op=0x8e | op=0x86 | op=0x96)) ... & STX_OP
+{
+    deref_write16(X, STX_OP);
+}
+
+STY_OP: SEC_OP_COMMON    is SEC_OP_COMMON  { export SEC_OP_COMMON; }
+STY_OP: RefDPIdxX    is bbb=5; RefDPIdxX  { export RefDPIdxX; }
+
+# STY 8 bit.
+:STY STY_OP    is (ctx_XF=1 & (op=0x8c | op=0x84 | op=0x94)) ... & STY_OP
+{
+    deref_write8(YLow, STY_OP);
+}
+
+# STY 16 bit.
+:STY STY_OP    is (ctx_XF=0 & (op=0x8c | op=0x84 | op=0x94)) ... & STY_OP
+{
+    deref_write16(Y, STY_OP);
+}
+
+# STZ has irregular address mode encoding compared to the other secondary instructions.
+STZ_OP: RefAbs    is op=0x9c; RefAbs  { export RefAbs; }
+STZ_OP: RefDP    is op=0x64; RefDP  { export RefDP; }
+STZ_OP: RefAbsIdxX    is op=0x9e; RefAbsIdxX  { export RefAbsIdxX; }
+STZ_OP: RefDPIdxX    is op=0x74; RefDPIdxX  { export RefDPIdxX; }
+
+# STZ 8 bit.
+:STZ STZ_OP    is (ctx_MF=1 & (op=0x9c | op=0x64 | op=0x9e | op=0x74)) ... & STZ_OP
+{
+    deref_write8(0:1, STZ_OP);
+}
+
+# STZ 16 bit.
+:STZ STZ_OP    is (ctx_MF=0 & (op=0x9c | op=0x64 | op=0x9e | op=0x74)) ... & STZ_OP
+{
+    deref_write16(0:2, STZ_OP);
+}
+
+# TAX  8 -> 8  or  16 -> 8
+:TAX    is op=0xaa & ctx_XF=1
+{
+    XLow = A;
+    flag8_NZ(A);
+}
+# TAX  8 -> 16  or  16 -> 16
+:TAX    is op=0xaa & ctx_XF=0
+{
+    X = C;
+    flag16_NZ(C);
+}
+
+# TAY  8 -> 8  or  16 -> 8
+:TAY    is op=0xa8 & ctx_XF=1
+{
+    YLow = A;
+    flag8_NZ(A);
+}
+# TAY  8 -> 16  or  16 -> 16
+:TAY    is op=0xa8 & ctx_XF=0
+{
+    Y = C;
+    flag16_NZ(C);
+}
+
+:TCD    is op=0x5b
+{
+    DP = C;
+    flag16_NZ(C);
+}
+
+# TCS native.
+:TCS    is (ctx_EF=0 & op=0x1b)
+{
+    SP = C;
+}
+# TCS emulation.
+:TCS    is (ctx_EF=1 & op=0x1b)
+{
+    SPLow = A;
+    SPHigh = 1;
+}
+
+:TDC    is op=0x7b
+{
+    C = DP;
+    flag16_NZ(DP);
+}
+
+TEST_OP: RefAbs    is dd=3; RefAbs  { export RefAbs; }
+TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
+
+# TRB 8 bit.
+:TRB TEST_OP    is ctx_MF=1 & (op=0x1c | op=0x14) ... & TEST_OP
+{
+    local data:1; deref_read8(data, TEST_OP);
+    local result:1 = data & ~A;
+    deref_write8(result, TEST_OP);
+    flag8_Z(data & A);
+}
+# TRB 16 bit.
+:TRB TEST_OP    is ctx_MF=0 & (op=0x1c | op=0x14) ... & TEST_OP
+{
+    local data:2; deref_read16(data, TEST_OP);
+    local result:2 = data & ~C;
+    deref_write16(result, TEST_OP);
+    flag16_Z(data & C);
+}
+
+# TSB 8 bit.
+:TSB TEST_OP    is ctx_MF=1 & (op=0x0c | op=0x04) ... & TEST_OP
+{
+    local data:1; deref_read8(data, TEST_OP);
+    local result:1 = data | A;
+    deref_write8(result, TEST_OP);
+    flag8_Z(data & A);
+}
+# TSB 16 bit.
+:TSB TEST_OP    is ctx_MF=0 & (op=0x0c | op=0x04) ... & TEST_OP
+{
+    local data:2; deref_read16(data, TEST_OP);
+    local result:2 = data | C;
+    deref_write16(result, TEST_OP);
+    flag16_Z(data & C);
+}
+
+:TSC    is op=0x3b
+{
+    C = SP;
+    flag16_NZ(SP);
+}
+
+# TSX 8 bit.
+:TSX    is (ctx_XF=1 & op=0xba)
+{
+    XLow = SPLow;
+    flag8_NZ(SPLow);
+}
+# TSX 16 bit.
+:TSX    is (ctx_XF=0 & op=0xba)
+{
+    X = SP;
+    flag16_NZ(SP);
+}
+
+# TXA  8 -> 8  or  16 -> 8
+:TXA    is op=0x8a & ctx_MF=1
+{
+    A = XLow;
+    flag8_NZ(XLow);
+}
+# TXA  8 -> 16
+:TXA    is op=0x8a & ctx_XF=1 & ctx_MF=0
+{
+    C = zext(XLow);
+    flag8_NZ(XLow);
+}
+# TXA  16 -> 16
+:TXA    is op=0x8a & ctx_XF=0 & ctx_MF=0
+{
+    C = X;
+    flag16_NZ(X);
+}
+
+# TXS emulation.
+:TXS    is op=0x9a & ctx_EF=1
+{
+    SPLow = XLow;
+}
+# TXS native  16 -> 8
+:TXS    is op=0x9a & ctx_EF=0 & ctx_XF=1
+{
+    SPLow = XLow;
+    SPHigh = 0;
+}
+# TXS native  16 -> 16
+:TXS    is op=0x9a & ctx_EF=0 & ctx_XF=0
+{
+    SP = X;
+}
+
+# TXY 8 bit.
+:TXY    is ctx_XF=1 & op=0x9b
+{
+    YLow = XLow;
+    flag8_NZ(XLow);
+}
+# TXY 16 bit.
+:TXY    is ctx_XF=0 & op=0x9b
+{
+    Y = X;
+    flag16_NZ(X);
+}
+
+# TYA  8 -> 8  or  16 -> 8
+:TYA    is op=0x98 & ctx_MF=1
+{
+    A = YLow;
+    flag8_NZ(YLow);
+}
+# TYA  8 -> 16
+:TYA    is op=0x98 & ctx_XF=1 & ctx_MF=0
+{
+    C = zext(YLow);
+    flag8_NZ(YLow);
+}
+# TYA  16 -> 16
+:TYA    is op=0x98 & ctx_XF=0 & ctx_MF=0
+{
+    C = Y;
+    flag16_NZ(Y);
+}
+
+# TYX 8 bit.
+:TYX    is ctx_XF=1 & op=0xbb
+{
+    XLow = YLow;
+    flag8_NZ(YLow);
+}
+# TYX 16 bit.
+:TYX    is ctx_XF=0 & op=0xbb
+{
+    X = Y;
+    flag16_NZ(Y);
+}
+
+# WAI will either jump to various interrupt vectors, or continue to the next instruction,
+# depending on IF and the interrupt type.
+define pcodeop wai;
+:WAI    is op=0xcb
+{
+    wai();
+}
+
+:WDM    is op=0x42; unused8  {}
+
+:XBA    is op=0xeb
+{
+    local old_b:1 = A;
+    B = A;
+    A = old_b;
+    flag8_NZ(old_b);
+}
+
+# XCE native -> ?
+# UNKNOWN: the correct behaviour of XCE when native -> native
+:XCE    is ctx_EF=0 & op=0xfb
+    [ ctx_EF=CF; globalset(inst_next, ctx_EF);
+      ctx_MF=1; globalset(inst_next, ctx_MF);
+      ctx_XF=1; globalset(inst_next, ctx_XF); ]
+{
+    local is_to_native:1 = (CF == 0);
+    if (is_to_native) goto <to_native>;
+
+#    <to_emulation>
+    XHigh = 0;
+    YHigh = 0;
+    SPHigh = 1;
+    goto <end>;
+
+    <to_native>
+    # It's not clear what happens when XCE re-switches into the current mode.
+    # I've assumed everything happens just as it would in a "real" mode switch.
+    XHigh = 0;
+    YHigh = 0;
+
+    <end>
+    CF = 0;
+}
+
+# XCE emulation -> ?
+# UNKNOWN: the correct behaviour of XCE when emulation -> emulation
+:XCE    is ctx_EF=1 & op=0xfb
+    [ ctx_EF=CF; globalset(inst_next, ctx_EF);
+      ctx_MF=1; globalset(inst_next, ctx_MF);
+      ctx_XF=1; globalset(inst_next, ctx_XF); ]
+{
+    local is_to_native:1 = (CF == 0);
+    if (is_to_native) goto <to_native>;
+
+#    <to_emulation>
+    # It's not clear what happens when XCE re-switches into the current mode.
+    # I've assumed everything happens just as it would in a "real" mode switch.
+    XHigh = 0;
+    YHigh = 0;
+    SPHigh = 1;
+    goto <end>;
+
+    <to_native>
+    XHigh = 0;
+    YHigh = 0;
+
+    <end>
+    CF = 1;
+}

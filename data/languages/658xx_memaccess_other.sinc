@@ -1,0 +1,30 @@
+# Stack absolute.
+MemStackAbs: !$imm16    is imm16  {
+    local data:2 = imm16;
+    export data;
+}
+
+# Stack direct page indirect.
+# No special wrapping.
+MemStackInd: (<$imm8)    is imm8  {
+    local offset8:1 = imm8;
+    local offset:4 = zext(offset8);
+
+    local data_lo:1; read_direct_noemu(data_lo, offset);
+    local data_hi:1; read_direct_noemu(data_hi, offset + 1);
+    local data:2; pack_lo_hi(data, data_lo, data_hi);
+    export data;
+}
+
+# Stack PC relative. For PER only, don't confuse with stack relative.
+MemStackPCRel: rel16    is rel16  {
+    # Make sure that the PC of the next instruction is actually correct
+    # (account for wrapping to stay within the PBR). I don't think Ghidra
+    # will do this naturally due to the way I have defined the PC.
+    local this_pc_full:3 = inst_start;
+    local this_pbr:1 = this_pc_full(2);
+
+    local pc_next:3 = (zext(this_pbr) << 16) | (inst_next & 0xFFFF);
+    local data:2 = pc_next:2 + rel16;
+    export data;
+}

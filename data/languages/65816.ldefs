@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<language_definitions>
+  <language processor="65816"
+            endian="little"
+            size="24"
+            variant="snes"
+            version="1.0"
+            slafile="65816.sla"
+            processorspec="65816-snes.pspec"
+            id="65816:LE:24:snes">
+    <description>65816 (SNES variant)</description>
+    <compiler name="default" spec="65816.cspec" id="default"/>
+  </language>
+</language_definitions>

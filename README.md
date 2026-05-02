@@ -1,29 +1,57 @@
 # ghidra-snes
 
-Small Ghidra scripts for working with SNES ROMs.
+SNES tooling for Ghidra.
 
-Depending on needs, some bits may be copied/ported from:
-https://github.com/achan1989/ghidra-snes-loader
+This repository now includes a Ghidra **Loader extension** that maps SNES ROMs as LoROM/HiROM at import time.
 
----
+## SNES Loader extension
 
-## MapSnesBanks.java
+The loader class is:
 
-> [!CAUTION]
-> This script is DESTRUCTIVE: to map the ROM to banks, the MemoryBlock are all destroyed to avoid conflicts. This will result in a loss of ALL existing analysis.
+- `src/main/java/snesloader/SnesRomLoader.java`
 
-Maps a LoROM/HiROM into a CPU-like memory layout:
+It maps:
 
 - LoROM: `00–7D:8000–FFFF`
 - HiROM: `40–7F:0000–FFFF`
 - WRAM: `7E–7F:0000–FFFF`
 
-No mirrors, no IO, no bus modeling: just a clean view to follow code and pointers.
+Detection is score-based (LoROM header vs HiROM header) and includes optional 0x200-byte SMC header adjustment.
 
-The script:
-- auto-detects LoROM/HiROM
-- CLEARS ALL ANALYSIS PRESENT
-- uses Ghidra FileBytes (no dependency on the initial memory map)
-- can be safely re-run (it rebuilds the mapping)
+### Build
 
-Tested on Ghidra 12.0.4.
+Set `GHIDRA_INSTALL_DIR` to your local Ghidra install and run:
+
+```shell
+GHIDRA_INSTALL_DIR=/path/to/ghidra ./gradlew clean buildExtension
+```
+
+The built extension zip will be created in `dist/`.
+
+### Install
+
+1. Open Ghidra.
+2. Go to **File → Install Extensions...**
+3. Click **+** and pick the zip from `dist/`.
+4. Restart Ghidra.
+
+When importing a ROM, select the **SNES ROM** format.
+
+## Legacy script
+
+`MapSnesBanks.java` is kept as a standalone script reference.
+
+> [!CAUTION]
+> The script clears all memory blocks before remapping, which destroys existing analysis.
+
+
+# Third-party code notice
+
+This project includes code originally sourced from:
+[ghidra-65816](https://github.com/achan1989/ghidra-65816)
+
+All credit for the original implementation goes to its respective authors.
+
+Parts of the codebase (notably the 65816 language specification) are derived from that repository, with modifications for compatibility, fixes, and integration.
+
+The register list has been taken from [undisbeliever's Register Cheat Sheet](https://undisbeliever.net/snesdev/registers/cheatsheet.html).

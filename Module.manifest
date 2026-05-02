@@ -1,0 +1,3 @@
+MODULE NAME: snes-loader
+MODULE DEPENDENCIES:
+    Ghidra
