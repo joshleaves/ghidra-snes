@@ -197,10 +197,18 @@ public class SnesPlugin extends ProgramPlugin {
     boolean commit = false;
 
     try {
-      int updated =
-          enabled
-              ? recreateMemoryBlocks(program, optionName)
-              : removeMemoryBlocks(program, optionName);
+      int updated = 0;
+      if (enabled) {
+        updated += recreateMemoryBlocks(program, optionName);
+        if (optionName.equals(SnesCommon.OPT_MEMORY_DISPLAY_MMIO)) {
+          SnesCommon.createMmioLabels(program);
+        }
+        if (optionName.equals(SnesCommon.OPT_MEMORY_DISPLAY_MIRRORS)) {
+          SnesCommon.createVectorLabels(program);
+        }
+      } else {
+        updated += removeMemoryBlocks(program, optionName);
+      }
 
       commit = true;
       tool.setStatusInfo("SNES memory mapping updated: " + updated + " block(s)");
@@ -327,59 +335,95 @@ public class SnesPlugin extends ProgramPlugin {
   /**
    * Recreates ROM mirror blocks for whichever ROM mapping is present.
    *
-   * The helper attempts both LoROM and HiROM mirrors; only existing source banks produce mirror
-   * blocks.
+   * LoROM and HiROM mirror different source ranges, so the implementation delegates to dedicated
+   * mapping-specific helpers.
    *
    * @param program active program
    * @return number of mirror blocks created
    */
   private int recreateMirrorBlocks(Program program) throws Exception {
-    return recreateRomMirrorBlocks(program, "lorom", 0x00, 0x3f, 0x80, 0x8000L)
-        + recreateRomMirrorBlocks(program, "hirom", 0x40, 0x7f, 0x80, 0x0000L);
+    return recreateLoRomMirrorBlocks(program) + recreateHiRomMirrorBlocks(program);
   }
 
   /**
-   * Recreates ROM mirror blocks for a specific mapping family.
+   * Recreates LoROM mirrors in banks {@code 00-7D:8000-FFFF}.
+   *
+   * The canonical LoROM ROM banks are mapped at {@code 80-FF:8000-FFFF}. Each lower mirror bank
+   * maps directly to the corresponding canonical bank.
    *
    * @param program active program
-   * @param mappingSuffix source block suffix, such as `lorom` or `hirom`
-   * @param firstSourceBank first source bank to mirror
-   * @param lastSourceBank last source bank to mirror
-   * @param mirrorBankOffset bank offset applied to the source bank
-   * @param mirrorBankAddressOffset address offset within the mirror bank
    * @return number of mirror blocks created
    */
-  private int recreateRomMirrorBlocks(
-      Program program,
-      String mappingSuffix,
-      int firstSourceBank,
-      int lastSourceBank,
-      int mirrorBankOffset,
-      long mirrorBankAddressOffset)
-      throws Exception {
+  private int recreateLoRomMirrorBlocks(Program program) throws Exception {
     Memory memory = program.getMemory();
     int created = 0;
 
-    for (int bank = firstSourceBank; bank <= lastSourceBank; bank++) {
-      MemoryBlock sourceBlock = memory.getBlock(String.format("bank_%02x_%s", bank, mappingSuffix));
+    for (int mirrorBank = 0x00; mirrorBank <= 0x7d; mirrorBank++) {
+      int sourceBank = mirrorBank + 0x80;
+      MemoryBlock sourceBlock = memory.getBlock(String.format("bank_%02x_lorom", sourceBank));
       if (sourceBlock == null) {
         continue;
       }
 
-      int mirrorBank = bank + mirrorBankOffset;
-      String mirrorName = String.format("snes_rom_mirror_%02x_%s", mirrorBank, mappingSuffix);
-      long mirrorAddress = ((long) mirrorBank << 16) | mirrorBankAddressOffset;
-
       created +=
           SnesCommon.ensureMappedBlock(
               program,
-              mirrorName,
-              mirrorAddress,
+              String.format("snes_rom_mirror_%02x_lorom", mirrorBank),
+              ((long) mirrorBank << 16) | 0x8000L,
               sourceBlock.getStart(),
               sourceBlock.getSize(),
-              mappingSuffix.toUpperCase() + " mirror of " + sourceBlock.getName());
+              "LoROM mirror of " + sourceBlock.getName());
     }
 
     return created;
+  }
+
+  /**
+   * Recreates HiROM mirrors in banks {@code 00-3F:8000-FFFF} and {@code 80-BF:8000-FFFF}.
+   *
+   * The canonical HiROM ROM banks are mapped at {@code C0-FF:0000-FFFF}. The mirror windows expose
+   * only the upper half of each canonical bank, so each mirror block maps to source offset
+   * {@code +0x8000} and has length {@code 0x8000}.
+   *
+   * @param program active program
+   * @return number of mirror blocks created
+   */
+  private int recreateHiRomMirrorBlocks(Program program) throws Exception {
+    Memory memory = program.getMemory();
+    int created = 0;
+
+    for (int sourceBank = 0xc0; sourceBank <= 0xff; sourceBank++) {
+      MemoryBlock sourceBlock = memory.getBlock(String.format("bank_%02x_hirom", sourceBank));
+      if (sourceBlock == null) {
+        continue;
+      }
+
+      int lowMirrorBank = sourceBank - 0xc0;
+      int highMirrorBank = sourceBank - 0x40;
+
+      created += createHiRomHalfMirrorBlock(program, sourceBlock, lowMirrorBank);
+      created += createHiRomHalfMirrorBlock(program, sourceBlock, highMirrorBank);
+    }
+
+    return created;
+  }
+
+  /**
+   * Recreates one HiROM half-bank mirror.
+   *
+   * @param program active program
+   * @param sourceBlock canonical {@code C0-FF} HiROM source block
+   * @param mirrorBank destination mirror bank
+   * @return 1 if the mirror block was created, 0 if skipped
+   */
+  private int createHiRomHalfMirrorBlock(Program program, MemoryBlock sourceBlock, int mirrorBank)
+      throws Exception {
+    return SnesCommon.ensureMappedBlock(
+        program,
+        String.format("snes_rom_mirror_%02x_hirom", mirrorBank),
+        ((long) mirrorBank << 16) | 0x8000L,
+        sourceBlock.getStart().add(0x8000L),
+        0x8000L,
+        "HiROM mirror of " + sourceBlock.getName() + "+0x8000");
   }
 }

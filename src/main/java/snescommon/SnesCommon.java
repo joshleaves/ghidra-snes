@@ -10,6 +10,7 @@ import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.SymbolTable;
 import snescommon.SnesMmio.*;
+import snescommon.SnesVectors.VectorRegister;
 
 public final class SnesCommon {
 
@@ -70,6 +71,24 @@ public final class SnesCommon {
     int created = 0;
     for (MmioRegister register : SnesMmio.MMIO_REGISTERS) {
       created += ensureLabel(program, register.name(), register.address());
+    }
+
+    return created;
+  }
+
+  /**
+   * Creates labels for SNES Vector registers.
+   *
+   * Labels are only created if they do not already exist. The register
+   * definitions are sourced from {@link SnesVectors#VECTOR_REGISTERS}.
+   *
+   * @param program the current program
+   * @return number of labels created
+   */
+  public static int createVectorLabels(Program program) throws Exception {
+    int created = 0;
+    for (VectorRegister register : SnesVectors.VECTOR_REGISTERS) {
+      created += SnesCommon.ensureLabel(program, register.name(), register.address());
     }
 
     return created;

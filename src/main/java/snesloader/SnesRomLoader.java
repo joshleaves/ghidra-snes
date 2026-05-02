@@ -33,8 +33,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import snescommon.SnesCommon;
-import snescommon.SnesVectors;
-import snescommon.SnesVectors.VectorRegister;
 
 /**
  * SNES ROM loader.
@@ -214,7 +212,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
     if (detection.mode != MappingMode.UNKNOWN) {
       try {
         mapMmio(program, settings.log());
-        createVectorLabels(program);
+        SnesCommon.createVectorLabels(program);
       } catch (Exception e) {
         settings
             .log()
@@ -498,10 +496,12 @@ public class SnesRomLoader extends AbstractProgramLoader {
   }
 
   /**
-   * Maps a LoROM image into SNES CPU address space.
+   * Maps a LoROM image into canonical SNES CPU ROM banks.
    *
-   * Each 32 KiB ROM bank is mapped to {@code bank:8000-FFFF}. Blocks are backed by FileBytes so
-   * Ghidra's Memory Map shows the original filename and file offsets.
+   * LoROM uses 32 KiB ROM banks. The canonical ROM window lives at {@code 80-FF:8000-FFFF};
+   * lower banks {@code 00-7D:8000-FFFF} are mirrors and can be added later by the UI plugin.
+   * Blocks are backed by FileBytes so Ghidra's Memory Map shows the original filename and file
+   * offsets.
    */
   private void mapLoRom(
       Program program,
@@ -515,8 +515,13 @@ public class SnesRomLoader extends AbstractProgramLoader {
       MessageLog log)
       throws IOException, CancelledException {
     long banks = (romSize + 0x7fffL) / 0x8000L;
-    for (long bank = 0; bank < banks && bank <= 0x7dL; bank++) {
-      long fileOffset = romOffset + (bank * 0x8000L);
+    for (long i = 0; i < banks; i++) {
+      long bank = 0x80L + i;
+      if (bank > 0xffL) {
+        break;
+      }
+
+      long fileOffset = romOffset + (i * 0x8000L);
       long cpuAddress = (bank << 16) | 0x8000L;
       mapInitializedBlock(
           program,
@@ -534,10 +539,12 @@ public class SnesRomLoader extends AbstractProgramLoader {
   }
 
   /**
-   * Maps a HiROM image into SNES CPU address space.
+   * Maps a HiROM image into canonical SNES CPU ROM banks.
    *
-   * Each 64 KiB ROM bank is mapped starting at bank {@code 40}. Blocks are backed by FileBytes so
-   * Ghidra's Memory Map shows the original filename and file offsets.
+   * HiROM uses 64 KiB ROM banks. The canonical ROM window lives at {@code C0-FF:0000-FFFF};
+   * lower banks {@code 40-7F:0000-FFFF} are mirrors and can be added later by the UI plugin.
+   * Blocks are backed by FileBytes so Ghidra's Memory Map shows the original filename and file
+   * offsets.
    */
   private void mapHiRom(
       Program program,
@@ -552,8 +559,8 @@ public class SnesRomLoader extends AbstractProgramLoader {
       throws IOException, CancelledException {
     long banks = (romSize + 0xffffL) / 0x10000L;
     for (long i = 0; i < banks; i++) {
-      long bank = 0x40L + i;
-      if (bank > 0x7fL) {
+      long bank = 0xc0L + i;
+      if (bank > 0xffL) {
         break;
       }
 
@@ -647,24 +654,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
     } catch (LockException | AddressOverflowException e) {
       throw new IOException("Failed to map block " + blockName, e);
     }
-  }
-
-  /**
-   * Creates labels for SNES Vector registers.
-   *
-   * Labels are only created if they do not already exist. The register
-   * definitions are sourced from {@link SnesVectors#VECTOR_REGISTERS}.
-   *
-   * @param program the current program
-   * @return number of labels created
-   */
-  public static int createVectorLabels(Program program) throws Exception {
-    int created = 0;
-    for (VectorRegister register : SnesVectors.VECTOR_REGISTERS) {
-      created += SnesCommon.ensureLabel(program, register.name(), register.address());
-    }
-
-    return created;
   }
 
   /**
