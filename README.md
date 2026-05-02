@@ -2,23 +2,44 @@
 
 SNES tooling for Ghidra.
 
-This repository now includes a Ghidra **Loader extension** that maps SNES ROMs as LoROM/HiROM at import time.
+This project provides a Ghidra extension for loading and working with SNES ROMs. It currently includes:
 
-## SNES Loader extension
+- a SNES ROM loader with LoROM / HiROM mapping
+- a 65816 language specification for SNES-oriented analysis
+- SNES memory-map helpers and register labels
 
-The loader class is:
+## Features
+### SNES ROM loader
 
-- `src/main/java/snesloader/SnesRomLoader.java`
+The loader maps SNES ROMs at import time instead of treating them as raw binary blobs.
 
-It maps:
+Supported mappings:
 
 - LoROM: `00–7D:8000–FFFF`
 - HiROM: `40–7F:0000–FFFF`
 - WRAM: `7E–7F:0000–FFFF`
+- SNES MMIO register ranges
 
-Detection is score-based (LoROM header vs HiROM header) and includes optional 0x200-byte SMC header adjustment.
+ROM mapping detection is score-based and compares LoROM and HiROM header candidates. It also supports optional `0x200`-byte SMC header adjustment.
 
-### Build
+Loader implementation:
+
+- `src/main/java/snesloader/SnesRomLoader.java`
+
+### 65816 language support
+
+The extension includes a SNES-oriented 65816 language definition:
+
+- language id: `65816:LE:24:snes`
+- compiler spec: `default`
+
+This allows imported ROMs to use 24-bit 65816 addressing directly in Ghidra.
+
+### SNES memory helpers
+
+The extension includes initial support for SNES-specific memory visibility controls, such as MMIO / WRAM / mirror mappings.
+
+## Build
 
 Set `GHIDRA_INSTALL_DIR` to your local Ghidra install and run:
 
@@ -28,14 +49,14 @@ GHIDRA_INSTALL_DIR=/path/to/ghidra ./gradlew clean buildExtension
 
 The built extension zip will be created in `dist/`.
 
-### Install
+## Install
 
 1. Open Ghidra.
 2. Go to **File → Install Extensions...**
-3. Click **+** and pick the zip from `dist/`.
+3. Click **+** and select the zip from `dist/`.
 4. Restart Ghidra.
 
-When importing a ROM, select the **SNES ROM** format.
+When importing a ROM, select the **SNES ROM Loader** format.
 
 ## Legacy script
 
@@ -44,14 +65,19 @@ When importing a ROM, select the **SNES ROM** format.
 > [!CAUTION]
 > The script clears all memory blocks before remapping, which destroys existing analysis.
 
+## Third-party code notice
 
-# Third-party code notice
-
-This project includes code originally sourced from:
-[ghidra-65816](https://github.com/achan1989/ghidra-65816)
+This project includes code originally sourced from [ghidra-65816](https://github.com/achan1989/ghidra-65816).
 
 All credit for the original implementation goes to its respective authors.
 
-Parts of the codebase (notably the 65816 language specification) are derived from that repository, with modifications for compatibility, fixes, and integration.
+Parts of the codebase, notably the 65816 language specification, are derived from that repository, with modifications for compatibility, fixes, and integration.
 
-The register list has been taken from [undisbeliever's Register Cheat Sheet](https://undisbeliever.net/snesdev/registers/cheatsheet.html).
+Additional resources:
+
+- The SNES register list is based on [undisbeliever's Register Cheat Sheet](https://undisbeliever.net/snesdev/registers/cheatsheet.html).
+- The Super Famicom logo icon is sourced from [Wikimedia Commons](https://en.wikipedia.org/wiki/File:Super_Famicom_logo.svg). It is considered to be in the public domain due to lack of originality, but may still be subject to trademark laws.
+
+## Special thanks
+
+Special thanks to Near (formerly known as byuu), whose contributions to SNES documentation, emulation, and preservation have had a lasting impact on the community.

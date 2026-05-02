@@ -8,9 +8,9 @@ import ghidra.app.util.opinion.LoadException;
 import ghidra.app.util.opinion.LoadSpec;
 import ghidra.app.util.opinion.Loaded;
 import ghidra.app.util.opinion.LoaderTier;
-import ghidra.program.database.mem.FileBytes;
 import ghidra.framework.options.Options;
 import ghidra.framework.store.LockException;
+import ghidra.program.database.mem.FileBytes;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressOverflowException;
 import ghidra.program.model.address.AddressSpace;
@@ -21,6 +21,7 @@ import ghidra.program.model.lang.LanguageNotFoundException;
 import ghidra.program.model.lang.Processor;
 import ghidra.program.model.lang.ProcessorNotFoundException;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ProgramUserData;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryConflictException;
@@ -39,6 +40,7 @@ import java.util.List;
 public class SnesRomLoader extends AbstractProgramLoader {
 
   private static final String LOADER_NAME = "SNES ROM Loader";
+  private static final String OPTIONS_NAME = "SNES ROM";
   private static final long SMC_HEADER_SIZE = 0x200L;
   private static final long LOROM_HEADER_OFFSET = 0x7fc0L;
   private static final long HIROM_HEADER_OFFSET = 0xffc0L;
@@ -46,11 +48,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
   private static final String SNES_65816_LANGUAGE_ID = "65816:LE:24:snes";
   private static final String SNES_65816_COMPILER_SPEC_ID = "default";
 
-  /**
-   * TODO: Add menu buttons to Hide/show banks
-   * - "Show/hide mirror banks" (default to false, use `MemoryBlockUtils.createByteMappedBlock`
-   * - "Show/hide WRAM banks" (default to true, already implemented)
-   */
   private enum MappingMode {
     LOROM("LoROM"),
     HIROM("HiROM"),
@@ -159,9 +156,12 @@ public class SnesRomLoader extends AbstractProgramLoader {
     AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();
     FileBytes romFileBytes;
     try (InputStream is = provider.getInputStream(0)) {
-      romFileBytes = memory.createFileBytes(provider.getName(), 0, provider.length(), is, settings.monitor());
+      romFileBytes =
+          memory.createFileBytes(provider.getName(), 0, provider.length(), is, settings.monitor());
     }
+
     if (detection.mode == MappingMode.LOROM) {
+
       mapLoRom(
           program,
           memory,
@@ -172,6 +172,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
           romSize,
           settings.monitor(),
           settings.log());
+      mapMmio(memory, space, settings.log());
     } else if (detection.mode == MappingMode.HIROM) {
       mapHiRom(
           program,
@@ -183,6 +184,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
           romSize,
           settings.monitor(),
           settings.log());
+      mapMmio(memory, space, settings.log());
     } else {
       settings.log().appendMsg("Unable to confidently detect LoROM/HiROM; mapping as raw ROM.");
       mapRawRom(
@@ -201,10 +203,20 @@ public class SnesRomLoader extends AbstractProgramLoader {
   }
 
   private void storeSnesRomOptions(Program program, DetectionResult detection, String title) {
-    Options opts = program.getOptions(LOADER_NAME);
-    opts.setString("mapper", detection.mode.label);
-    opts.setBoolean("hasSmcHeader", detection.romOffset == SMC_HEADER_SIZE);
-    opts.setString("title", title);
+    ProgramUserData userData = program.getProgramUserData();
+    int transactionId = userData.startTransaction();
+
+    try {
+      Options opts = userData.getOptions(OPTIONS_NAME);
+      opts.setString("cart.mapper", detection.mode.label);
+      opts.setString("cart.title", title);
+      opts.setBoolean("rom.hasSmcHeader", detection.romOffset == SMC_HEADER_SIZE);
+      opts.setBoolean("memory.display_mmio", true);
+      opts.setBoolean("memory.display_wram", true);
+      opts.setBoolean("memory.display_mirrors", false);
+    } finally {
+      userData.endTransaction(transactionId);
+    }
   }
 
   private long getHeaderOffsetForTitle(DetectionResult detection) {
@@ -357,7 +369,17 @@ public class SnesRomLoader extends AbstractProgramLoader {
       MessageLog log)
       throws IOException, CancelledException {
     mapInitializedBlock(
-        program, memory, space, provider, romFileBytes, "rom", 0x000000L, romOffset, romSize, monitor, log);
+        program,
+        memory,
+        space,
+        provider,
+        romFileBytes,
+        "rom",
+        0x000000L,
+        romOffset,
+        romSize,
+        monitor,
+        log);
   }
 
   private void mapLoRom(
@@ -425,6 +447,29 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
   }
 
+  private void mapMmio(Memory memory, AddressSpace space, MessageLog log) {
+    record MmioRegion(String name, long start, long size) {}
+    List<MmioRegion> regions =
+        List.of(
+            new MmioRegion("snes_mmio_ppu", 0x002100, 0x40),
+            new MmioRegion("snes_mmio_apu", 0x002140, 0x40),
+            new MmioRegion("snes_mmio_wram", 0x002180, 0x04),
+            new MmioRegion("snes_mmio_cpu", 0x004200, 0x20),
+            new MmioRegion("snes_mmio_dma", 0x004300, 0x80));
+
+    for (MmioRegion r : regions) {
+      try {
+        MemoryBlock block =
+            memory.createUninitializedBlock(r.name(), space.getAddress(r.start()), r.size(), false);
+        block.setRead(true);
+        block.setWrite(true);
+        block.setExecute(false);
+      } catch (Exception e) {
+        log.appendMsg("MMIO skip: " + r.name() + " (" + e.getMessage() + ")");
+      }
+    }
+  }
+
   private void mapWram(Memory memory, AddressSpace space, MessageLog log) throws IOException {
     long cpuAddress = 0x7e0000L;
     long size = 0x20000L;
@@ -466,12 +511,15 @@ public class SnesRomLoader extends AbstractProgramLoader {
 
     Address start = space.getAddress(cpuAddress);
     try {
-      MemoryBlock block = memory.createInitializedBlock(blockName, start, romFileBytes, fileOffset, size, false);
+      MemoryBlock block =
+          memory.createInitializedBlock(blockName, start, romFileBytes, fileOffset, size, false);
       block.setRead(true);
       block.setWrite(false);
       block.setExecute(true);
       block.setComment(String.format("SNES ROM file offset 0x%06X", fileOffset));
-      log.appendMsg(String.format("%-14s file[0x%06X,+0x%X] -> CPU 0x%06X", blockName, fileOffset, size, cpuAddress));
+      log.appendMsg(
+          String.format(
+              "%-14s file[0x%06X,+0x%X] -> CPU 0x%06X", blockName, fileOffset, size, cpuAddress));
     } catch (MemoryConflictException e) {
       log.appendMsg("skip conflict: " + blockName + " at 0x" + Long.toHexString(cpuAddress));
     } catch (LockException | AddressOverflowException e) {
