@@ -32,15 +32,21 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import snescommon.SnesCommon;
+import snescommon.SnesVectors;
+import snescommon.SnesVectors.VectorRegister;
 
 /**
- * Loader for SNES ROM dumps. It auto-detects LoROM/HiROM, maps ROM banks into
- * CPU-like addresses, and creates WRAM.
+ * SNES ROM loader.
+ *
+ * Detects LoROM/HiROM layouts, maps ROM banks into CPU address space,
+ * and initializes common SNES memory regions (WRAM, MMIO).
+ *
+ * Also extracts metadata such as title and SRAM size and stores them
+ * as hidden ProgramUserData options.
  */
 public class SnesRomLoader extends AbstractProgramLoader {
-
   private static final String LOADER_NAME = "SNES ROM Loader";
-  private static final String OPTIONS_NAME = "SNES ROM";
   private static final long SMC_HEADER_SIZE = 0x200L;
   private static final long LOROM_HEADER_OFFSET = 0x7fc0L;
   private static final long HIROM_HEADER_OFFSET = 0xffc0L;
@@ -109,6 +115,12 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return loadSpecs;
   }
 
+  /**
+   * Main loader entry point.
+   *
+   * Detects mapping mode, maps ROM into memory, initializes MMIO/WRAM,
+   * and stores metadata into ProgramUserData.
+   */
   @Override
   protected List<Loaded<Program>> loadProgram(ImporterSettings settings)
       throws IOException, CancelledException {
@@ -137,8 +149,11 @@ public class SnesRomLoader extends AbstractProgramLoader {
     if (romSize <= 0) {
       throw new LoadException("ROM file contains no data after header adjustment.");
     }
-    String title = readTitle(provider, getHeaderOffsetForTitle(detection));
-    storeSnesRomOptions(program, detection, title);
+    long headerOffset = getHeaderOffsetForTitle(detection);
+    String title = readTitle(provider, headerOffset);
+    int sramSize = readSramSize(provider, headerOffset);
+
+    storeSnesRomOptions(program, detection, title, sramSize);
 
     settings
         .log()
@@ -161,7 +176,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
 
     if (detection.mode == MappingMode.LOROM) {
-
       mapLoRom(
           program,
           memory,
@@ -172,7 +186,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
           romSize,
           settings.monitor(),
           settings.log());
-      mapMmio(memory, space, settings.log());
     } else if (detection.mode == MappingMode.HIROM) {
       mapHiRom(
           program,
@@ -184,7 +197,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
           romSize,
           settings.monitor(),
           settings.log());
-      mapMmio(memory, space, settings.log());
     } else {
       settings.log().appendMsg("Unable to confidently detect LoROM/HiROM; mapping as raw ROM.");
       mapRawRom(
@@ -199,26 +211,57 @@ public class SnesRomLoader extends AbstractProgramLoader {
           settings.log());
     }
 
-    mapWram(memory, space, settings.log());
+    if (detection.mode != MappingMode.UNKNOWN) {
+      try {
+        mapMmio(program, settings.log());
+        createVectorLabels(program);
+      } catch (Exception e) {
+        settings
+            .log()
+            .appendMsg("Could not add SNES helper mappings/labels (" + e.getMessage() + ")");
+      }
+    }
+
+    mapWram(program, settings.log());
   }
 
-  private void storeSnesRomOptions(Program program, DetectionResult detection, String title) {
+  /**
+   * Stores SNES metadata and default memory toggle states into ProgramUserData.
+   *
+   * @param program target program
+   * @param detection mapping detection result
+   * @param title ROM title
+   * @param sramSize SRAM size in bytes
+   */
+  private void storeSnesRomOptions(
+      Program program, DetectionResult detection, String title, int sramSize) {
     ProgramUserData userData = program.getProgramUserData();
     int transactionId = userData.startTransaction();
 
     try {
-      Options opts = userData.getOptions(OPTIONS_NAME);
-      opts.setString("cart.mapper", detection.mode.label);
-      opts.setString("cart.title", title);
-      opts.setBoolean("rom.hasSmcHeader", detection.romOffset == SMC_HEADER_SIZE);
-      opts.setBoolean("memory.display_mmio", true);
-      opts.setBoolean("memory.display_wram", true);
-      opts.setBoolean("memory.display_mirrors", false);
+      Options opts = userData.getOptions(SnesCommon.OPTIONS_NAME);
+      opts.setString(SnesCommon.OPT_CART_MAPPER, detection.mode.label);
+      opts.setString(SnesCommon.OPT_CART_TITLE, title);
+      opts.setInt(SnesCommon.OPT_CART_SRAM_SIZE, sramSize);
+      opts.setBoolean(SnesCommon.OPT_ROM_HAS_SMC_HEADER, detection.romOffset == SMC_HEADER_SIZE);
+      opts.setBoolean(SnesCommon.OPT_MEMORY_DISPLAY_MMIO, true);
+      opts.setBoolean(SnesCommon.OPT_MEMORY_DISPLAY_SRAM, false);
+      opts.setBoolean(SnesCommon.OPT_MEMORY_DISPLAY_WRAM, true);
+      opts.setBoolean(SnesCommon.OPT_MEMORY_DISPLAY_MIRRORS, false);
     } finally {
       userData.endTransaction(transactionId);
     }
   }
 
+  /**
+   * Returns the absolute SNES internal header offset for metadata reads.
+   *
+   * The title, SRAM size, checksum, and vectors live inside the internal ROM header. The offset
+   * differs between LoROM and HiROM and must also account for an optional 0x200-byte SMC header.
+   *
+   * @param detection mapping detection result
+   * @return absolute file offset of the internal header
+   */
   private long getHeaderOffsetForTitle(DetectionResult detection) {
     if (detection.mode == MappingMode.HIROM) {
       return detection.romOffset + HIROM_HEADER_OFFSET;
@@ -232,6 +275,16 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return detection.romOffset + LOROM_HEADER_OFFSET;
   }
 
+  /**
+   * Reads the 21-byte SNES title field from the internal ROM header.
+   *
+   * Non-printable bytes are replaced with spaces so malformed titles do not leak control
+   * characters into logs or metadata.
+   *
+   * @param provider ROM byte provider
+   * @param headerOffset absolute file offset of the internal header
+   * @return trimmed ROM title, or an empty string if unavailable
+   */
   private String readTitle(ByteProvider provider, long headerOffset) throws IOException {
     if (headerOffset < 0 || headerOffset + 21L > provider.length()) {
       return "";
@@ -253,6 +306,41 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return title.toString().trim();
   }
 
+  /**
+   * Reads the cartridge SRAM size from the SNES internal header.
+   *
+   * The SRAM size byte is stored at header offset {@code 0x18}. For standard SNES headers, this
+   * value encodes {@code 2^N KiB}; {@code 0} means no SRAM. The returned value is stored in hidden
+   * ProgramUserData so the UI plugin can enable or disable the SRAM mapping action.
+   *
+   * @param provider ROM byte provider
+   * @param headerOffset absolute file offset of the internal header
+   * @return SRAM size in bytes, or 0 if the header declares no SRAM
+   */
+  private int readSramSize(ByteProvider provider, long headerOffset) throws IOException {
+    if (headerOffset < 0 || headerOffset + 0x19L > provider.length()) {
+      return 0;
+    }
+
+    int sramExp = u8(provider, headerOffset + 0x18);
+    if (sramExp == 0) {
+      return 0;
+    }
+
+    // size = 2^N KB
+    return (1 << sramExp) * 1024;
+  }
+
+  /**
+   * Finds the preferred SNES 65816 language/compiler spec pair.
+   *
+   * The loader first asks for the exact bundled language id. If it cannot be found, it falls back
+   * to a query for any compatible 65816 little-endian 24-bit SNES language. If no language module
+   * is installed, the caller will provide an incomplete LoadSpec so Ghidra can still present the
+   * loader as a candidate.
+   *
+   * @return matching load specs, possibly empty
+   */
   private List<LoadSpec> find65816LoadSpecs() {
     List<LoadSpec> specs = new ArrayList<>();
     getLanguageService(); // Ensure processors are loaded.
@@ -282,6 +370,16 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return specs;
   }
 
+  /**
+   * Detects the most likely SNES mapping mode and optional SMC header offset.
+   *
+   * The detector scores LoROM and HiROM header candidates at file offset 0 and, when the file size
+   * suggests it, at offset 0x200 for copier-headered `.smc` dumps. The highest-scoring candidate is
+   * returned.
+   *
+   * @param provider ROM byte provider
+   * @return best mapping detection result
+   */
   private DetectionResult detectBestMapping(ByteProvider provider) throws IOException {
     List<Long> candidateOffsets = new ArrayList<>();
     candidateOffsets.add(0L);
@@ -313,6 +411,18 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return best;
   }
 
+  /**
+   * Scores a possible SNES internal header.
+   *
+   * The score is heuristic, not a full validation. It checks whether the title looks printable,
+   * whether the mapper nibble matches the expected LoROM/HiROM family, whether checksum and
+   * complement agree, and whether the reset vector looks plausible.
+   *
+   * @param provider ROM byte provider
+   * @param headerOffset absolute file offset of the candidate internal header
+   * @param isLoRom true when scoring as LoROM, false when scoring as HiROM
+   * @return heuristic confidence score
+   */
   private int scoreHeader(ByteProvider provider, long headerOffset, boolean isLoRom)
       throws IOException {
     if (headerOffset < 0 || (headerOffset + 0x40L) > provider.length()) {
@@ -357,6 +467,11 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return score;
   }
 
+  /**
+   * Maps the ROM as a single raw block when LoROM/HiROM detection is inconclusive.
+   *
+   * This fallback keeps the import usable without pretending that the SNES bus layout is known.
+   */
   private void mapRawRom(
       Program program,
       Memory memory,
@@ -382,6 +497,12 @@ public class SnesRomLoader extends AbstractProgramLoader {
         log);
   }
 
+  /**
+   * Maps a LoROM image into SNES CPU address space.
+   *
+   * Each 32 KiB ROM bank is mapped to {@code bank:8000-FFFF}. Blocks are backed by FileBytes so
+   * Ghidra's Memory Map shows the original filename and file offsets.
+   */
   private void mapLoRom(
       Program program,
       Memory memory,
@@ -412,6 +533,12 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
   }
 
+  /**
+   * Maps a HiROM image into SNES CPU address space.
+   *
+   * Each 64 KiB ROM bank is mapped starting at bank {@code 40}. Blocks are backed by FileBytes so
+   * Ghidra's Memory Map shows the original filename and file offsets.
+   */
   private void mapHiRom(
       Program program,
       Memory memory,
@@ -447,47 +574,42 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
   }
 
-  private void mapMmio(Memory memory, AddressSpace space, MessageLog log) {
-    record MmioRegion(String name, long start, long size) {}
-    List<MmioRegion> regions =
-        List.of(
-            new MmioRegion("snes_mmio_ppu", 0x002100, 0x40),
-            new MmioRegion("snes_mmio_apu", 0x002140, 0x40),
-            new MmioRegion("snes_mmio_wram", 0x002180, 0x04),
-            new MmioRegion("snes_mmio_cpu", 0x004200, 0x20),
-            new MmioRegion("snes_mmio_dma", 0x004300, 0x80));
-
-    for (MmioRegion r : regions) {
-      try {
-        MemoryBlock block =
-            memory.createUninitializedBlock(r.name(), space.getAddress(r.start()), r.size(), false);
-        block.setRead(true);
-        block.setWrite(true);
-        block.setExecute(false);
-      } catch (Exception e) {
-        log.appendMsg("MMIO skip: " + r.name() + " (" + e.getMessage() + ")");
-      }
+  /**
+   * Creates SNES MMIO blocks and labels via the shared SNES helpers.
+   *
+   * Errors are logged but do not abort the import, because ROM mapping is still useful even if
+   * auxiliary MMIO regions fail to be created.
+   */
+  private void mapMmio(Program program, MessageLog log) {
+    try {
+      SnesCommon.createMemoryBlocksMmio(program);
+    } catch (Exception e) {
+      log.appendMsg("Error adding MMIO blocks (" + e.getMessage() + ")");
     }
   }
 
-  private void mapWram(Memory memory, AddressSpace space, MessageLog log) throws IOException {
-    long cpuAddress = 0x7e0000L;
-    long size = 0x20000L;
-
-    Address start = space.getAddress(cpuAddress);
+  /**
+   * Creates the main SNES WRAM block via the shared SNES helpers.
+   *
+   * WRAM creation errors are treated as import errors because WRAM is part of the default SNES bus
+   * view used by this loader.
+   */
+  private void mapWram(Program program, MessageLog log) throws IOException {
     try {
-      MemoryBlock block = memory.createUninitializedBlock("bank_7e_wram", start, size, false);
-      block.setRead(true);
-      block.setWrite(true);
-      block.setExecute(false);
-      log.appendMsg(String.format("%-14s CPU 0x%06X size 0x%X", "snes_wram", cpuAddress, size));
+      SnesCommon.createMemoryBlockWram(program);
     } catch (MemoryConflictException e) {
-      log.appendMsg("skip conflict: snes_wram at 0x" + Long.toHexString(cpuAddress));
-    } catch (LockException | AddressOverflowException e) {
+      log.appendMsg("Error creating WRAM block: (" + e.getMessage() + ")");
+    } catch (Exception e) {
       throw new IOException("Failed to create WRAM block", e);
     }
   }
 
+  /**
+   * Creates an initialized memory block backed by the original ROM FileBytes.
+   *
+   * Using FileBytes rather than an InputStream-backed block lets Ghidra display byte sources as
+   * {@code filename[offset, length]} in the Memory Map.
+   */
   private void mapInitializedBlock(
       Program program,
       Memory memory,
@@ -527,10 +649,34 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
   }
 
+  /**
+   * Creates labels for SNES Vector registers.
+   *
+   * Labels are only created if they do not already exist. The register
+   * definitions are sourced from {@link SnesVectors#VECTOR_REGISTERS}.
+   *
+   * @param program the current program
+   * @return number of labels created
+   */
+  public static int createVectorLabels(Program program) throws Exception {
+    int created = 0;
+    for (VectorRegister register : SnesVectors.VECTOR_REGISTERS) {
+      created += SnesCommon.ensureLabel(program, register.name(), register.address());
+    }
+
+    return created;
+  }
+
+  /**
+   * Reads an unsigned byte from the ROM.
+   */
   private int u8(ByteProvider provider, long offset) throws IOException {
     return provider.readByte(offset) & 0xff;
   }
 
+  /**
+   * Reads an unsigned little-endian 16-bit value from the ROM.
+   */
   private int u16(ByteProvider provider, long offset) throws IOException {
     return u8(provider, offset) | (u8(provider, offset + 1) << 8);
   }
