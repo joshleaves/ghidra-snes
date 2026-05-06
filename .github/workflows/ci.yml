@@ -1,11 +1,12 @@
-name: CI
-
+name: 'CI'
 on:
   push:
     branches:
       - master
       - feature/**
   pull_request:
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -35,3 +36,10 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }} test
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        if: ${{ always() && !cancelled() && hashFiles('build/test-results/test/*.xml') != '' }}
+        with:
+          name: test-results
+          path: build/test-results/test/*.xml
