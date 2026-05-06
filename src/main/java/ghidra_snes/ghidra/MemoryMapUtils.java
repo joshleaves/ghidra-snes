@@ -1,5 +1,5 @@
 /* (C) Arnaud 'red' Rouyer 2026 */
-package snescommon;
+package ghidra_snes.ghidra;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSpace;
@@ -9,89 +9,10 @@ import ghidra.program.model.mem.MemoryBlock;
 import ghidra.program.model.mem.MemoryConflictException;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.symbol.SymbolTable;
-import snescommon.SnesMmio.*;
-import snescommon.SnesVectors.VectorRegister;
 
-public final class SnesCommon {
-
-  public static final String OPTIONS_NAME = "SNES ROM";
-
-  public static final String OPT_CART_MAPPER = "cart.mapper";
-  public static final String OPT_CART_TITLE = "cart.title";
-  public static final String OPT_CART_SRAM_SIZE = "cart.sram_size";
-  public static final String OPT_ROM_HAS_SMC_HEADER = "rom.hasSmcHeader";
-  public static final String OPT_MEMORY_DISPLAY_MIRRORS = "memory.display_mirrors";
-  public static final String OPT_MEMORY_DISPLAY_MMIO = "memory.display_mmio";
-  public static final String OPT_MEMORY_DISPLAY_SRAM = "memory.display_sram";
-  public static final String OPT_MEMORY_DISPLAY_WRAM = "memory.display_wram";
-
-  private SnesCommon() {}
-
-  /**
-   * Creates SNES MMIO memory blocks if they do not already exist.
-   *
-   * This method is idempotent: existing blocks are left untouched.
-   * The MMIO layout is defined in {@link SnesMmio#MMIO_REGIONS}.
-   *
-   * @param program the current program
-   * @return number of blocks created
-   */
-  public static int createMemoryBlocksMmio(Program program) throws Exception {
-    int created = 0;
-
-    for (MmioRegion mmio : SnesMmio.MMIO_REGIONS) {
-      created += ensureUninitializedBlock(program, mmio.name(), mmio.start(), mmio.size());
-    }
-
-    return created;
-  }
-
-  /**
-   * Creates the main SNES WRAM memory block (7E–7F) if missing.
-   *
-   * The block is created as uninitialized, read/write, non-executable memory.
-   *
-   * @param program the current program
-   * @return 1 if created, 0 if already present
-   */
-  public static int createMemoryBlockWram(Program program) throws Exception {
-    return ensureUninitializedBlock(program, "snes_wram", 0x7e0000, 0x20000);
-  }
-
-  /**
-   * Creates labels for SNES MMIO registers.
-   *
-   * Labels are only created if they do not already exist. The register
-   * definitions are sourced from {@link SnesMmio#MMIO_REGISTERS}.
-   *
-   * @param program the current program
-   * @return number of labels created
-   */
-  public static int createMmioLabels(Program program) throws Exception {
-    int created = 0;
-    for (MmioRegister register : SnesMmio.MMIO_REGISTERS) {
-      created += ensureLabel(program, register.name(), register.address());
-    }
-
-    return created;
-  }
-
-  /**
-   * Creates labels for SNES Vector registers.
-   *
-   * Labels are only created if they do not already exist. The register
-   * definitions are sourced from {@link SnesVectors#VECTOR_REGISTERS}.
-   *
-   * @param program the current program
-   * @return number of labels created
-   */
-  public static int createVectorLabels(Program program) throws Exception {
-    int created = 0;
-    for (VectorRegister register : SnesVectors.VECTOR_REGISTERS) {
-      created += SnesCommon.ensureLabel(program, register.name(), register.address());
-    }
-
-    return created;
+public class MemoryMapUtils {
+  public static boolean isSystemBank(int bank) {
+    return (bank >= 0x00 && bank <= 0x3f) || (bank >= 0x80 && bank <= 0xbf);
   }
 
   /**
@@ -106,7 +27,8 @@ public final class SnesCommon {
    * @param size size in bytes
    * @return 1 if created, 0 if already exists
    */
-  public static int ensureUninitializedBlock(Program program, String name, long start, long size)
+  public static int ensureUninitializedBlock(
+      Program program, String name, long start, long size, String source, String comment)
       throws Exception {
     Memory memory = program.getMemory();
     AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();
@@ -116,6 +38,8 @@ public final class SnesCommon {
     }
 
     MemoryBlock block = memory.createUninitializedBlock(name, space.getAddress(start), size, false);
+    block.setSourceName(source);
+    block.setComment(comment);
     block.setRead(true);
     block.setWrite(true);
     block.setExecute(false);
@@ -137,7 +61,13 @@ public final class SnesCommon {
    * @return 1 if created, 0 if already exists
    */
   public static int ensureMappedBlock(
-      Program program, String name, long start, Address mappedAddress, long size, String comment)
+      Program program,
+      String name,
+      long start,
+      Address mappedAddress,
+      long size,
+      String source,
+      String comment)
       throws Exception {
     Memory memory = program.getMemory();
     AddressSpace space = program.getAddressFactory().getDefaultAddressSpace();
@@ -154,6 +84,7 @@ public final class SnesCommon {
     try {
       MemoryBlock block =
           memory.createByteMappedBlock(name, startAddress, mappedAddress, size, false);
+      block.setSourceName(source);
       block.setComment(comment);
       block.setRead(true);
       block.setWrite(false);

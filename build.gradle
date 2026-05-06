@@ -6,6 +6,39 @@
 plugins {
   id 'java'
   id("com.diffplug.spotless") version "8.4.0"
+  id 'com.adarshr.test-logger' version '4.0.0'
+}
+
+dependencies {
+  testImplementation 'org.junit.jupiter:junit-jupiter:6.0.3'
+  testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.0.3'
+}
+
+test {
+  outputs.upToDateWhen { false }
+
+  useJUnitPlatform()
+  failFast = true
+
+  testlogger {
+    theme = 'mocha'
+    showPassed = true
+    showSkipped = true
+    showFailed = true
+    showExceptions = true
+    showCauses = true
+    showStackTraces = true
+    showStandardStreams = false
+  }
+
+  // testLogging {
+  //   events = ["passed", "skipped", "failed", "standardOut", "standardError"]
+  //   exceptionFormat = "full"
+  //   showExceptions = true
+  //   showCauses = true
+  //   showStackTraces = true
+  //   showStandardStreams = true
+  // }
 }
 
 repositories {
@@ -32,7 +65,7 @@ spotless {
     // make sure every file has the following copyright header.
     // optionally, Spotless can set copyright years by digging
     // through git history (see "license" section below)
-    licenseHeader '/* (C) Arnaud \'red\' Rouyer $YEAR */'
+    // licenseHeader '/* (C) Arnaud \'red\' Rouyer $YEAR */'
   }
 }
 
