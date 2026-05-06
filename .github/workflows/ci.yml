@@ -22,11 +22,16 @@ jobs:
           java-version: 21
           cache: gradle
 
+      - name: Install Ghidra
+        uses: antoniovazquezblanco/setup-ghidra@v2
+        with:
+          version: 12.0.4
+
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
       - name: Run Spotless check
-        run: ./gradlew spotlessCheck
+        run: ./gradlew -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }} spotlessCheck
 
       - name: Run unit tests
-        run: ./gradlew test
+        run: ./gradlew -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }} test
