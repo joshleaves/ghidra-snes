@@ -15,13 +15,7 @@ The goal for V1 is to provide a working SNES ROM loader/plugin for recent Ghidra
 - Map SNES MMIO regions.
 - Add labels for SNES MMIO registers.
 - Add labels for SNES interrupt/vector entries.
-- Add UI toggles for managed memory blocks:
-  - MMIO
-  - WRAM
-  - SRAM, when declared by the ROM header
-  - ROM mirrors
 - Store plugin metadata/state in hidden `ProgramUserData`, not editable Program Options.
-- Provide a toolbar/menu entry for SNES memory helpers.
 - Document third-party code/assets and credits.
 
 ## V1 cleanup before release

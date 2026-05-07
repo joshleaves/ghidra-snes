@@ -20,8 +20,6 @@ Supported mappings (canonical):
 - WRAM: `7E–7F:0000–FFFF`
 - SNES MMIO register ranges
 
-Optional mirrors can be toggled on/off from **Tools → SNES Memory** to expose the lower-bank views (e.g. `00–7D` for LoROM, `00–3F`/`80–BF` windows for HiROM).
-
 ROM mapping detection is score-based and compares LoROM and HiROM header candidates. It also supports optional `0x200`-byte SMC header adjustment.
 
 The loader creates primary (canonical) ROM banks; mirror banks are optional and managed by the plugin UI.
@@ -38,14 +36,6 @@ The extension includes a SNES-oriented 65816 language definition:
 - compiler spec: `default`
 
 This allows imported ROMs to use native 24-bit 65816 addressing directly in Ghidra.
-
-### SNES memory helpers
-
-The extension includes SNES-specific memory visibility controls (MMIO, WRAM, SRAM, and ROM mirrors), with toggleable mappings exposed in the UI.
-
-#### Usage
-
-After importing a ROM, use **Tools → SNES Memory** to enable/disable MMIO, WRAM, SRAM (if present), and ROM mirror banks.
 
 ## Build
 
