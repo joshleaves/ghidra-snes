@@ -1,3 +1,4 @@
+/* (C) Arnaud 'red' Rouyer 2026 */
 package ghidra_snes;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -73,6 +74,21 @@ class SnesCartridgeTest {
         () -> assertEquals(MetadataSource.UNKNOWN, cartridge.getMetadataSource()),
         () -> assertEquals(cartridge.getLoRomScore(), cartridge.getHiRomScore()),
         () -> assertTrue(cartridge.getLoRomScore() > 0),
+        () -> assertTrue(cartridge.getRomHeader().isEmpty()));
+  }
+
+  @Test
+  @DisplayName("Unique low-confidence headers are not accepted")
+  void uniqueLowConfidenceHeadersAreNotAccepted() throws Exception {
+    byte[] rom = new byte[0x8000];
+    rom[(int) (SnesCartridge.LOROM_HEADER_OFFSET + 0x15)] = 0x20;
+
+    var cartridge = new SnesCartridge(new ByteArrayProvider("weak.sfc", rom));
+
+    assertAll(
+        () -> assertEquals(RomType.Raw, cartridge.getRomType()),
+        () -> assertEquals(MetadataSource.UNKNOWN, cartridge.getMetadataSource()),
+        () -> assertTrue(cartridge.getLoRomScore() > cartridge.getHiRomScore()),
         () -> assertTrue(cartridge.getRomHeader().isEmpty()));
   }
 

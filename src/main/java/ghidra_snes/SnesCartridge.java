@@ -19,7 +19,7 @@ import java.util.Optional;
  * Immutable-ish SNES cartridge metadata extracted from a ROM ByteProvider.
  *
  * <p>This class is responsible for identifying/describing the cartridge only. It intentionally does
- * not create Ghidra memory blocks. Mapping decisions belong in SnesMappingService.
+ * not create Ghidra memory blocks. Mapping decisions belong in the loader and mapping helpers.
  */
 public final class SnesCartridge {
   public static final long COPIER_HEADER_SIZE = 0x200L;

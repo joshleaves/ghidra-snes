@@ -1,3 +1,4 @@
+/* (C) Arnaud 'red' Rouyer 2026 */
 package ghidra_snes.loader;
 
 import static org.junit.jupiter.api.Assertions.*;

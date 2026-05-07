@@ -62,26 +62,31 @@ test {
 }
 
 spotless {
+  // Generic text-file cleanup.
+  // This does NOT format Groovy/YAML semantically; it only trims whitespace,
+  // converts literal tab characters, and enforces a final newline.
   format 'misc', {
-    // define the files to apply `misc` to
-    target '*.gradle', '.gitattributes', '.gitignore'
+    target '*.gradle', '**/*.gradle', '.gitattributes', '.gitignore', '.github/**/*.yml', '.github/**/*.yaml'
 
-    // define the steps to apply to those files
     trimTrailingWhitespace()
     leadingTabsToSpaces(2)
     endWithNewline()
   }
-  java {
-    // don't need to set target, it is inferred from java
 
-    // apply a specific flavor of google-java-format
-    googleJavaFormat('1.35.0').reflowLongStrings().skipJavadocFormatting()
-    // fix formatting of type annotations
+  // Java source formatting.
+  // google-java-format owns the actual Java layout; indentation width is not configurable here.
+  // leadingTabsToSpaces(2) only converts literal tab characters before formatting.
+  java {
+    target 'src/main/java/**/*.java', 'src/test/java/**/*.java'
+
+    trimTrailingWhitespace()
+    leadingTabsToSpaces(2)
+    endWithNewline()
+
+    // googleJavaFormat('1.35.0').reflowLongStrings().skipJavadocFormatting()
     formatAnnotations()
-    // make sure every file has the following copyright header.
-    // optionally, Spotless can set copyright years by digging
-    // through git history (see "license" section below)
-    // licenseHeader '/* (C) Arnaud \'red\' Rouyer $YEAR */'
+
+    licenseHeader('/* (C) Arnaud \'red\' Rouyer 2026 */')
   }
 }
 
