@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Release extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Temurin JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install Ghidra
+        uses: antoniovazquezblanco/setup-ghidra@v2
+        with:
+          version: 12.0.4
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build Ghidra extension
+        run: ./gradlew -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }} buildExtension
+
+      - name: Rename extension artifact
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ZIP_PATH="$(find dist -maxdepth 1 -type f -name '*.zip' | head -n 1)"
+          mv "$ZIP_PATH" "dist/ghidra_snes-v${VERSION}.zip"
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghidra_snes-${{ github.ref_name }}
+          path: dist/ghidra_snes-${{ github.ref_name }}.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ghidra_snes-${{ github.ref_name }}.zip
