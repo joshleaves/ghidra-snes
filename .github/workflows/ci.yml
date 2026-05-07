@@ -1,12 +1,10 @@
 name: 'CI'
 on:
   push:
-    branches:
-      - master
-      - feature/**
-  pull_request:
 permissions:
   contents: read
+  actions: read
+  checks: write
 
 jobs:
   build:
@@ -37,9 +35,10 @@ jobs:
       - name: Run unit tests
         run: ./gradlew -PGHIDRA_INSTALL_DIR=${{ env.GHIDRA_INSTALL_DIR }} test
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v7
+      - name: Publish test report
+        uses: dorny/test-reporter@v3
         if: ${{ always() && !cancelled() && hashFiles('build/test-results/test/*.xml') != '' }}
         with:
-          name: test-results
+          name: JUnit tests
           path: build/test-results/test/*.xml
+          reporter: java-junit
