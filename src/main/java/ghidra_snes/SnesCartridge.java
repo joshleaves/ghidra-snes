@@ -60,7 +60,8 @@ public final class SnesCartridge {
     this.romSize = Math.max(0, provider.length() - detection.romOffset);
     this.sha256 = computeSha256(provider, detection.romOffset);
 
-    SnesRomHeader detectedHeader = readHeader(provider, detection.headerOffset());
+    SnesRomHeader detectedHeader =
+        detection.hasConfidentMapping() ? readHeader(provider, detection.headerOffset()) : null;
     this.romHeader = Optional.ofNullable(detectedHeader);
 
     if (detection.bestScore() >= MIN_CONFIDENCE_SCORE && detection.mode != DetectionMode.UNKNOWN) {
@@ -166,20 +167,8 @@ public final class SnesCartridge {
       int hi = scoreHeader(provider, romOffset + HIROM_HEADER_OFFSET, HeaderKind.HiROM);
       int exHi = scoreHeader(provider, romOffset + EXHIROM_HEADER_OFFSET, HeaderKind.ExHiROM);
 
-      DetectionMode mode = DetectionMode.UNKNOWN;
-      long headerOffset = romOffset + LOROM_HEADER_OFFSET;
-      int bestScore = Math.max(lo, Math.max(hi, exHi));
-
-      if (bestScore == lo) {
-        mode = DetectionMode.LoROM;
-        headerOffset = romOffset + LOROM_HEADER_OFFSET;
-      } else if (bestScore == hi) {
-        mode = DetectionMode.HiROM;
-        headerOffset = romOffset + HIROM_HEADER_OFFSET;
-      } else if (bestScore == exHi) {
-        mode = DetectionMode.ExHiROM;
-        headerOffset = romOffset + EXHIROM_HEADER_OFFSET;
-      }
+      DetectionMode mode = uniquelyBestDetectionMode(lo, hi, exHi);
+      long headerOffset = headerOffsetForMode(romOffset, mode);
 
       DetectionResult candidate = new DetectionResult(mode, romOffset, headerOffset, lo, hi, exHi);
       if (best == null || candidate.bestScore() > best.bestScore()) {
@@ -191,6 +180,34 @@ public final class SnesCartridge {
       return new DetectionResult(DetectionMode.UNKNOWN, 0L, LOROM_HEADER_OFFSET, -999, -999, -999);
     }
     return best;
+  }
+
+  private static DetectionMode uniquelyBestDetectionMode(int loScore, int hiScore, int exHiScore) {
+    int bestScore = Math.max(loScore, Math.max(hiScore, exHiScore));
+    int winners = 0;
+    winners += loScore == bestScore ? 1 : 0;
+    winners += hiScore == bestScore ? 1 : 0;
+    winners += exHiScore == bestScore ? 1 : 0;
+
+    if (winners != 1) {
+      return DetectionMode.UNKNOWN;
+    }
+    if (loScore == bestScore) {
+      return DetectionMode.LoROM;
+    }
+    if (hiScore == bestScore) {
+      return DetectionMode.HiROM;
+    }
+    return DetectionMode.ExHiROM;
+  }
+
+  private static long headerOffsetForMode(long romOffset, DetectionMode mode) {
+    return switch (mode) {
+      case LoROM -> romOffset + LOROM_HEADER_OFFSET;
+      case HiROM -> romOffset + HIROM_HEADER_OFFSET;
+      case ExHiROM -> romOffset + EXHIROM_HEADER_OFFSET;
+      case UNKNOWN -> romOffset + LOROM_HEADER_OFFSET;
+    };
   }
 
   private static int scoreHeader(ByteProvider provider, long headerOffset, HeaderKind kind)
@@ -340,6 +357,10 @@ public final class SnesCartridge {
       int loScore,
       int hiScore,
       int exHiScore) {
+    boolean hasConfidentMapping() {
+      return mode != DetectionMode.UNKNOWN && bestScore() >= MIN_CONFIDENCE_SCORE;
+    }
+
     int bestScore() {
       return Math.max(loScore, Math.max(hiScore, exHiScore));
     }

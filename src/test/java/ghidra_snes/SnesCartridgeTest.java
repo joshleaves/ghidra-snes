@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra_snes.SnesCartridge.MetadataSource;
 import ghidra_snes.common.RomType;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -17,7 +16,7 @@ class SnesCartridgeTest {
   @DisplayName("LoROM internal headers populate cartridge metadata")
   void loRomInternalHeadersPopulateMetadata() throws Exception {
     byte[] rom = new byte[0x8000];
-    writeHeader(rom, SnesCartridge.LOROM_HEADER_OFFSET, "UNIT TEST ROM", 0x20, 0x03);
+    TestUtils.writeHeader(rom, SnesCartridge.LOROM_HEADER_OFFSET, "UNIT TEST ROM", 0x20, 0x03);
 
     var cartridge = new SnesCartridge(new ByteArrayProvider("unit.sfc", rom));
     var header = cartridge.getRomHeader().orElseThrow();
@@ -47,7 +46,7 @@ class SnesCartridgeTest {
   @DisplayName("HiROM headers are detected at $00FFC0")
   void hiRomHeadersAreDetectedAtFfc0() throws Exception {
     byte[] rom = new byte[0x10000];
-    writeHeader(rom, SnesCartridge.HIROM_HEADER_OFFSET, "HIROM TEST", 0x21, 0);
+    TestUtils.writeHeader(rom, SnesCartridge.HIROM_HEADER_OFFSET, "HIROM TEST", 0x21);
 
     var cartridge = new SnesCartridge(new ByteArrayProvider("hirom.sfc", rom));
 
@@ -61,16 +60,32 @@ class SnesCartridgeTest {
   }
 
   @Test
+  @DisplayName("Ambiguous LoROM and HiROM headers are not guessed")
+  void ambiguousLoRomAndHiRomHeadersAreNotGuessed() throws Exception {
+    byte[] rom = new byte[0x10000];
+    TestUtils.writeHeader(rom, SnesCartridge.LOROM_HEADER_OFFSET, "AMBIGUOUS LOROM", 0x20);
+    TestUtils.writeHeader(rom, SnesCartridge.HIROM_HEADER_OFFSET, "AMBIGUOUS HIROM", 0x21);
+
+    var cartridge = new SnesCartridge(new ByteArrayProvider("ambiguous.sfc", rom));
+
+    assertAll(
+        () -> assertEquals(RomType.Raw, cartridge.getRomType()),
+        () -> assertEquals(MetadataSource.UNKNOWN, cartridge.getMetadataSource()),
+        () -> assertEquals(cartridge.getLoRomScore(), cartridge.getHiRomScore()),
+        () -> assertTrue(cartridge.getLoRomScore() > 0),
+        () -> assertTrue(cartridge.getRomHeader().isEmpty()));
+  }
+
+  @Test
   @DisplayName("Copier headers are skipped for size and hashing")
   void copierHeadersAreSkippedForSizeAndHashing() throws Exception {
     byte[] rom = new byte[0x8200];
     Arrays.fill(rom, 0, (int) SnesCartridge.COPIER_HEADER_SIZE, (byte) 0x7e);
-    writeHeader(
+    TestUtils.writeHeader(
         rom,
         SnesCartridge.COPIER_HEADER_SIZE + SnesCartridge.LOROM_HEADER_OFFSET,
         "SMC HEADER TEST",
-        0x20,
-        0);
+        0x20);
 
     var cartridge = new SnesCartridge(new ByteArrayProvider("smc.sfc", rom));
 
@@ -107,31 +122,6 @@ class SnesCartridgeTest {
     var header = new SnesCartridge.SnesRomHeader("", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
     assertEquals(0, header.getSramSizeBytes());
-  }
-
-  private static void writeHeader(
-      byte[] rom, long headerOffset, String title, int mapMode, int sramSizeByte) {
-    int offset = Math.toIntExact(headerOffset);
-    Arrays.fill(rom, offset, offset + 21, (byte) 0x20);
-
-    byte[] titleBytes = title.getBytes(StandardCharsets.US_ASCII);
-    System.arraycopy(titleBytes, 0, rom, offset, Math.min(titleBytes.length, 21));
-
-    rom[offset + 0x15] = (byte) mapMode;
-    rom[offset + 0x16] = 0x02;
-    rom[offset + 0x17] = 0x09;
-    rom[offset + 0x18] = (byte) sramSizeByte;
-    rom[offset + 0x19] = 0x01;
-    rom[offset + 0x1a] = 0x33;
-    rom[offset + 0x1b] = 0x00;
-    writeU16(rom, offset + 0x1c, 0x1234);
-    writeU16(rom, offset + 0x1e, 0xedcb);
-    writeU16(rom, offset + 0x3c, 0x8000);
-  }
-
-  private static void writeU16(byte[] data, int offset, int value) {
-    data[offset] = (byte) value;
-    data[offset + 1] = (byte) (value >>> 8);
   }
 
   private static String sha256(byte[] data, int offset) throws Exception {

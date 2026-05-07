@@ -22,11 +22,11 @@ Supported mappings (canonical):
 
 ROM mapping detection is score-based and compares LoROM and HiROM header candidates. It also supports optional `0x200`-byte SMC header adjustment.
 
-The loader creates primary (canonical) ROM banks; mirror banks are optional and managed by the plugin UI.
+The loader creates primary (canonical) ROM banks and required mirror banks (`00:0000-5FFF` for SNES system RAM & I/O, and `00:8000-FFFF` for ROM). Other mirrors  can be managed by the (coming next) plugin UI.
 
 Loader implementation:
 
-- `src/main/java/snesloader/SnesRomLoader.java`
+- `src/main/java/ghidra_snes/loader/SnesRomLoader.java`
 
 ### 65816 language support
 
