@@ -1,4 +1,4 @@
-# ghidra-snes
+![](src/main/resources/images/ghidra-snes.png)
 
 SNES tooling for Ghidra.
 

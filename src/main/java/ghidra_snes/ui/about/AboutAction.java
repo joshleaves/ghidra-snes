@@ -8,10 +8,13 @@ import ghidra.util.Swing;
 import ghidra_snes.BuildInfo;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Image;
+
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.Icon;
+import javax.swing.ImageIcon;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -29,6 +32,11 @@ public final class AboutAction {
 
   private static final Icon SNES_ICON = ResourceManager.loadImage("images/SFC_logo_16.png");
   private static final Icon SNES_LOGO = ResourceManager.loadImage("images/SFC_logo_64.png");
+  private static final ImageIcon GHIDRA_SNES_LOGO =
+    new ImageIcon(
+        ResourceManager.loadImage("images/ghidra-snes.png")
+            .getImage()
+            .getScaledInstance(280, -1, Image.SCALE_SMOOTH));
 
   public AboutAction(PluginTool tool, String owner) {
     new ActionBuilder("About Ghidra-SNES", owner)
@@ -59,7 +67,8 @@ public final class AboutAction {
             panel.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
             panel.setPreferredSize(new Dimension(320, 420));
 
-            JLabel logoLabel = new JLabel(SNES_LOGO);
+
+            JLabel logoLabel = new JLabel(GHIDRA_SNES_LOGO);
             logoLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
             panel.add(logoLabel);
 
