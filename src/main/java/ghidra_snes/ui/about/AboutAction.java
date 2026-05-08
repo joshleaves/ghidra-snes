@@ -9,6 +9,9 @@ import ghidra_snes.BuildInfo;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Image;
+import java.awt.Cursor;
+import java.awt.Desktop;
+import java.net.URI;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -29,6 +32,8 @@ public final class AboutAction {
   private static final String PLUGIN_GHIDRA_COMPATIBILITY = BuildInfo.PLUGIN_GHIDRA_COMPATIBILITY;
   private static final String PLUGIN_BUILD_DATE = BuildInfo.PLUGIN_BUILD_DATE;
   private static final String PLUGIN_BUILD_COMMIT = BuildInfo.PLUGIN_BUILD_COMMIT;
+  private static final String PROJECT_REPO = "joshleaves/ghidra-snes";
+  private static final String PROJECT_URL = "https://github.com/joshleaves/ghidra-snes";
 
   private static final Icon SNES_ICON = ResourceManager.loadImage("images/SFC_logo_16.png");
   private static final ImageIcon GHIDRA_SNES_LOGO = new ImageIcon(
@@ -98,6 +103,18 @@ public final class AboutAction {
           buildCommitLabel.setFont(buildCommitLabel.getFont().deriveFont(java.awt.Font.BOLD));
           panel.add(buildCommitLabel);
 
+          JLabel projectLink = new JLabel("<html><strong>Repository:</strong> <a href=\"\">" + PROJECT_REPO + "</a></html>", SwingConstants.CENTER);
+          projectLink.setAlignmentX(Component.CENTER_ALIGNMENT);
+          projectLink.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+          projectLink.addMouseListener(
+              new java.awt.event.MouseAdapter() {
+                @Override
+                public void mouseClicked(java.awt.event.MouseEvent event) {
+                  openProjectUrl();
+                }
+              });
+          panel.add(projectLink);
+
           panel.add(Box.createVerticalStrut(16));
           panel.add(new JSeparator());
           panel.add(Box.createVerticalStrut(16));
@@ -130,5 +147,21 @@ public final class AboutAction {
         }
       }
     );
+  }
+
+  private static void openProjectUrl() {
+    try {
+      if (!Desktop.isDesktopSupported()) {
+        return;
+      }
+      Desktop.getDesktop().browse(URI.create(PROJECT_URL));
+    } catch (Exception e) {
+      Msg.showError(
+        AboutAction.class,
+        null,
+        "Open Project URL",
+        "Unable to open " + PROJECT_URL,
+        e);
+    }
   }
 }
