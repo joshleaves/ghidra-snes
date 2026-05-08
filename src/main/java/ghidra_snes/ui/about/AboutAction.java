@@ -2,6 +2,7 @@
 package ghidra_snes.ui.about;
 
 import docking.action.builder.ActionBuilder;
+import docking.tool.ToolConstants;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.util.Msg;
 import ghidra.util.Swing;
@@ -43,7 +44,7 @@ public final class AboutAction {
 
   public AboutAction(PluginTool tool, String owner) {
     new ActionBuilder("About Ghidra-SNES", owner)
-      .menuPath("Help", "About Ghidra-SNES")
+      .menuPath(ToolConstants.MENU_HELP, "About Ghidra-SNES")
       .menuIcon(SNES_ICON)
       .description("Show Ghidra-SNES version and compatibility information.")
       .onAction(context -> showAboutDialog(tool))
