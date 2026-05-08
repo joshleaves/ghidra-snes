@@ -106,3 +106,37 @@ if (ghidraInstallDir) {
 else {
     throw new GradleException("GHIDRA_INSTALL_DIR is not defined!")
 }
+
+tasks.register('installLocalExtension', Copy) {
+  group = 'Ghidra Private'
+  description = 'Builds and installs the extension into the configured local Ghidra installation.'
+  dependsOn tasks.named('buildExtension')
+
+  def extensionDirEnv = System.env.GHIDRA_EXTENSION_DIR
+  if (!extensionDirEnv) {
+    throw new GradleException("GHIDRA_EXTENSION_DIR is not defined!")
+  }
+
+  def extensionsDir = new File(extensionDirEnv).getCanonicalFile()
+  def extensionName = 'ghidra-snes'
+  def extensionInstallDir = new File(extensionsDir, extensionName)
+
+  doFirst {
+    if (extensionInstallDir.exists()) {
+      delete extensionInstallDir
+    }
+  }
+
+  from({
+    def extensionZips = fileTree('dist') {
+      include '*.zip'
+    }.files.sort { a, b -> b.lastModified() <=> a.lastModified() }
+
+    if (extensionZips.isEmpty()) {
+      throw new GradleException("No extension zip found in dist/. Run buildExtension first.")
+    }
+
+    zipTree(extensionZips.first())
+  })
+  into extensionsDir
+}

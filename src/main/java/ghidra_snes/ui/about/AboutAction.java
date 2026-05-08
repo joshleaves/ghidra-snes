@@ -31,7 +31,6 @@ public final class AboutAction {
   private static final String PLUGIN_BUILD_COMMIT = BuildInfo.PLUGIN_BUILD_COMMIT;
 
   private static final Icon SNES_ICON = ResourceManager.loadImage("images/SFC_logo_16.png");
-  private static final Icon SNES_LOGO = ResourceManager.loadImage("images/SFC_logo_64.png");
   private static final ImageIcon GHIDRA_SNES_LOGO =
     new ImageIcon(
         ResourceManager.loadImage("images/ghidra-snes.png")
