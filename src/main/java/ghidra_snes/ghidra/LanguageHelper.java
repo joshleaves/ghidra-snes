@@ -29,13 +29,11 @@ public final class LanguageHelper {
    *
    * @return matching load specs, possibly empty
    */
-  public static List<LoadSpec> find65816LoadSpecs(
-      AbstractProgramLoader loader, LanguageService languageService) {
+  public static List<LoadSpec> find65816LoadSpecs(AbstractProgramLoader loader, LanguageService languageService) {
     var specs = new ArrayList<LoadSpec>();
 
     try {
-      var preferred =
-          new LanguageCompilerSpecPair(SNES_65816_LANGUAGE_ID, SNES_65816_COMPILER_SPEC_ID);
+      var preferred = new LanguageCompilerSpecPair(SNES_65816_LANGUAGE_ID, SNES_65816_COMPILER_SPEC_ID);
 
       if (languageService.getLanguage(preferred.languageID) != null) {
         specs.add(new LoadSpec(loader, 0, preferred, true));

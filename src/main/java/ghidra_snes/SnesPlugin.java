@@ -10,11 +10,11 @@ import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra_snes.ui.about.AboutAction;
 
 @PluginInfo(
-    status = PluginStatus.RELEASED,
-    packageName = MiscellaneousPluginPackage.NAME,
-    category = PluginCategoryNames.COMMON,
-    shortDescription = "SNES ROM loader helpers",
-    description = "SNES ROM loader helpers and UI actions.")
+  status = PluginStatus.RELEASED,
+  packageName = MiscellaneousPluginPackage.NAME,
+  category = PluginCategoryNames.COMMON,
+  shortDescription = "SNES ROM loader helpers",
+  description = "SNES ROM loader helpers and UI actions.")
 public class SnesPlugin extends ProgramPlugin {
   public SnesPlugin(PluginTool tool) {
     super(tool);

@@ -22,10 +22,10 @@ public class MemoryMap {
    * <p>The canonical mapping always lives in bank 00. Mirror blocks are later
    * generated into the visible CPU banks.
    */
-  public static final List<SystemRegion> SYSTEM_REGIONS =
-      List.of(
-          new SystemRegion("snes_low_ram", "SNES Low RAM", 0x0, 0x2000),
-          new SystemRegion("snes_io", "SNES I/O", 0x2000, 0x4000));
+  public static final List<SystemRegion> SYSTEM_REGIONS = List.of(
+      new SystemRegion("snes_low_ram", "SNES Low RAM", 0x0, 0x2000),
+      new SystemRegion("snes_io", "SNES I/O", 0x2000, 0x4000)
+    );
 
   /**
    * Creates the canonical SNES system regions in bank $00.
