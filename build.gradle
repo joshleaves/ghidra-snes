@@ -31,7 +31,7 @@ buildInfo {
   packageName = 'ghidra_snes'
   className = 'BuildInfo'
   properties = [
-    PLUGIN_VERSION: "0.1.0",
+    PLUGIN_VERSION: "0.1.1",
     PLUGIN_GHIDRA_COMPATIBILITY: "12.0.4",
     PLUGIN_BUILD_DATE: buildDate,
     PLUGIN_BUILD_COMMIT: gitCommit,
