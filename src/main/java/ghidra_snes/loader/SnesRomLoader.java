@@ -56,6 +56,25 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return 50;
   }
 
+  @Override
+  public boolean supportsLoadIntoProgram(Program _program) {
+    return false;
+  }
+
+
+  /**
+   * Required by AbstractProgramLoader.
+   *
+   * SNES ROM loading is implemented through loadProgram() instead of
+   * loadProgramInto(), since this loader does not support importing
+   * into an already existing Program.
+   */
+  @Override
+  protected void loadProgramInto(Program program, ImporterSettings settings)
+      throws IOException, LoadException, CancelledException {
+    // Unsupported.
+  }
+
   /**
    * Ghidra glue
    *
@@ -90,7 +109,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
 
     boolean success = false;
     try {
-      loadInto(program, settings);
+      loadRom(program, settings);
       createDefaultMemoryBlocks(program, settings);
       success = true;
       return List.of(loaded);
@@ -101,8 +120,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
   }
 
-  @Override
-  protected void loadProgramInto(Program program, ImporterSettings settings)
+  protected void loadRom(Program program, ImporterSettings settings)
       throws IOException, LoadException, CancelledException {
     ByteProvider provider = settings.provider();
     SnesCartridge cartridge = new SnesCartridge(provider);
@@ -149,7 +167,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
           // We need to add the ROM offset in case there's a copier header
           cartridge.getRomOffset() + chunk.fileOffset(),
           chunk.requestedSize(),
-          settings.monitor(),
           settings.log());
     }
 
@@ -182,7 +199,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
       long cpuAddress,
       long fileOffset,
       long requestedSize,
-      TaskMonitor monitor,
       MessageLog log)
       throws IOException, CancelledException {
     if (fileOffset >= provider.length()) {
