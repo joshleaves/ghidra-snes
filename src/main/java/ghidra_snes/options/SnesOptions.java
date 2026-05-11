@@ -5,30 +5,31 @@ import ghidra.framework.options.Options;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.listing.ProgramUserData;
 import ghidra_snes.SnesCartridge;
+import ghidra_snes.common.SnesRomHeader;
 
 public final class SnesOptions {
   public static final String OPTIONS_NAME = "SNES ROM";
 
-  public static final String OPT_CART_MAPPER = "cart.mapper";
-  public static final String OPT_CART_TITLE = "cart.title";
-  public static final String OPT_CART_SRAM_SIZE = "cart.sram_size";
-
-  public static final String OPT_ROM_SHA256 = "rom.sha256";
-  public static final String OPT_ROM_SIZE = "rom.size";
-
+  public static final String OPT_CART_MAPPER         = "cart.mapper";
+  public static final String OPT_CART_TITLE          = "cart.title";
+  public static final String OPT_CART_SRAM_SIZE      = "cart.sram_size";
+  public static final String OPT_HEADER_LOCATION     = "header.location";
+  public static final String OPT_HEADER_RAW_BYTES    = "header.rawBytes";
+  public static final String OPT_ROM_SIZE            = "rom.size";
   public static final String OPT_FILE_HAS_SMC_HEADER = "file.hasSmcHeader";
-  public static final String OPT_FILE_ROM_OFFSET = "file.romOffset";
+  public static final String OPT_FILE_ROM_OFFSET     = "file.romOffset";
+  public static final String OPT_METADATA_SOURCE     = "metadata.source";
 
-  public static final String OPT_METADATA_SOURCE = "metadata.source";
-
-  private static final String DEFAULT_CART_MAPPER = "Raw";
-  private static final String DEFAULT_CART_TITLE = "";
-  private static final int DEFAULT_CART_SRAM_SIZE = 0;
-  private static final String DEFAULT_ROM_SHA256 = "";
-  private static final long DEFAULT_ROM_SIZE = 0;
+  private static final String  DEFAULT_CART_MAPPER         = "UNKNOWN";
+  private static final String  DEFAULT_CART_TITLE          = "";
+  private static final int     DEFAULT_CART_SRAM_SIZE      = 0;
+  private static final long    DEFAULT_HEADER_LOCATION     = SnesRomHeader.LOROM_HEADER_OFFSET - 1;
+  private static final byte[]  DEFAULT_HEADER_RAW_BYTES    =
+      new byte[Math.toIntExact(SnesRomHeader.HEADER_SIZE)];
+  private static final long    DEFAULT_ROM_SIZE            = 0;
   private static final boolean DEFAULT_FILE_HAS_SMC_HEADER = false;
-  private static final long DEFAULT_FILE_ROM_OFFSET = 0;
-  private static final String DEFAULT_METADATA_SOURCE = SnesCartridge.MetadataSource.UNKNOWN.name();
+  private static final long    DEFAULT_FILE_ROM_OFFSET     = 0;
+  private static final String  DEFAULT_METADATA_SOURCE     = SnesCartridge.MetadataSource.UNKNOWN.name();
 
   private SnesOptions() {}
 
@@ -43,21 +44,18 @@ public final class SnesOptions {
    * @param cartridge parsed SNES cartridge metadata
    */
   public static void initializeFromCartridge(Program program, SnesCartridge cartridge) {
-    String title = cartridge.getRomLabel().orElse("");
-    int sramSize =
-        cartridge.getRomHeader().map(SnesCartridge.SnesRomHeader::getSramSizeBytes).orElse(0);
-
     setOptions(
         program,
         options -> {
-          options.setString(OPT_CART_MAPPER, cartridge.getRomType().toString());
-          options.setString(OPT_CART_TITLE, title);
-          options.setInt(OPT_CART_SRAM_SIZE, sramSize);
-          options.setString(OPT_ROM_SHA256, cartridge.getSha256());
-          options.setLong(OPT_ROM_SIZE, cartridge.getRomSizeBytes());
-          options.setBoolean(OPT_FILE_HAS_SMC_HEADER, cartridge.hasCopierHeader());
-          options.setLong(OPT_FILE_ROM_OFFSET, cartridge.getRomOffset());
-          options.setString(OPT_METADATA_SOURCE, cartridge.getMetadataSource().name());
+          options.setString(   OPT_CART_MAPPER,         cartridge.getRomMapType().toString());
+          options.setString(   OPT_CART_TITLE,          cartridge.getRomHeader().titleString());
+          options.setLong(     OPT_CART_SRAM_SIZE,      cartridge.getRomHeader().ramSize());
+          options.setLong(     OPT_HEADER_LOCATION,     cartridge.getRomHeader().location());
+          options.setByteArray(OPT_HEADER_RAW_BYTES,    cartridge.getRomHeader().romHeaderBytes());
+          options.setLong(     OPT_ROM_SIZE,            cartridge.getRomSizeBytes());
+          options.setBoolean(  OPT_FILE_HAS_SMC_HEADER, cartridge.hasCopierHeader());
+          options.setLong(     OPT_FILE_ROM_OFFSET,     cartridge.getRomOffset());
+          options.setString(   OPT_METADATA_SOURCE,     cartridge.getMetadataSource().name());
         });
   }
 
@@ -92,13 +90,6 @@ public final class SnesOptions {
   }
 
   /**
-   * Reads an integer value from the SNES option store.
-   */
-  private static int getInt(Program program, String optionName, int defaultValue) {
-    return program.getProgramUserData().getOptions(OPTIONS_NAME).getInt(optionName, defaultValue);
-  }
-
-  /**
    * Reads a long value from the SNES option store.
    */
   private static long getLong(Program program, String optionName, long defaultValue) {
@@ -116,10 +107,23 @@ public final class SnesOptions {
   }
 
   /**
+   * Returns the raw detected SNES ROM header stored at import time.
+   *
+   * @param program target Ghidra program
+   * @return parsed header record backed by the stored raw header bytes
+   */
+  public static SnesRomHeader getRomHeader(Program program) {
+    Options optionObject = program.getProgramUserData().getOptions(OPTIONS_NAME);
+    long headerLocation = optionObject.getLong(OPT_HEADER_LOCATION, DEFAULT_HEADER_LOCATION);
+    byte[] rawHeaderBytes = optionObject.getByteArray(OPT_HEADER_RAW_BYTES, DEFAULT_HEADER_RAW_BYTES);
+    return new SnesRomHeader(headerLocation, rawHeaderBytes);
+  }
+
+  /**
    * Returns the detected SNES ROM mapping type.
    *
    * @param program target Ghidra program
-   * @return mapper type (LoROM, HiROM, ExHiROM, Raw)
+   * @return mapper type (LoROM, HiROM, ExHiROM, UNKNOWN)
    */
   public static String getCartMapper(Program program) {
     return getString(program, OPT_CART_MAPPER, DEFAULT_CART_MAPPER);
@@ -141,18 +145,8 @@ public final class SnesOptions {
    * @param program target Ghidra program
    * @return SRAM size in bytes
    */
-  public static int getCartSramSize(Program program) {
-    return getInt(program, OPT_CART_SRAM_SIZE, DEFAULT_CART_SRAM_SIZE);
-  }
-
-  /**
-   * Returns the SHA-256 of the ROM payload, excluding any copier/SMC header.
-   *
-   * @param program target Ghidra program
-   * @return lowercase hexadecimal SHA-256, or empty string if unavailable
-   */
-  public static String getRomSha256(Program program) {
-    return getString(program, OPT_ROM_SHA256, DEFAULT_ROM_SHA256);
+  public static long getCartSramSize(Program program) {
+    return getLong(program, OPT_CART_SRAM_SIZE, DEFAULT_CART_SRAM_SIZE);
   }
 
   /**

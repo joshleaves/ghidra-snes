@@ -16,10 +16,9 @@ import ghidra.program.model.address.AddressSpace;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.mem.Memory;
 import ghidra.util.exception.CancelledException;
-import ghidra.util.task.TaskMonitor;
 import ghidra_snes.SnesCartridge;
-import ghidra_snes.common.RomType;
-import ghidra_snes.common.RomType.MappingChunk;
+import ghidra_snes.common.RomMapType;
+import ghidra_snes.common.RomMapType.MappingChunk;
 import ghidra_snes.common.registers.Vectors;
 import ghidra_snes.ghidra.LanguageHelper;
 import ghidra_snes.ghidra.MemoryMap;
@@ -29,15 +28,7 @@ import java.io.InputStream;
 import java.util.Collection;
 import java.util.List;
 
-/**
- * SNES ROM loader.
- *
- * Detects LoROM/HiROM layouts, maps ROM banks into CPU address space,
- * and initializes common SNES memory regions (WRAM, MMIO).
- *
- * Also extracts metadata such as title and SRAM size and stores them
- * as hidden ProgramUserData options.
- */
+
 public class SnesRomLoader extends AbstractProgramLoader {
   private static final String LOADER_NAME = "SNES ROM Loader";
 
@@ -61,30 +52,22 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return false;
   }
 
-
-  /**
-   * Required by AbstractProgramLoader.
-   *
-   * SNES ROM loading is implemented through loadProgram() instead of
-   * loadProgramInto(), since this loader does not support importing
-   * into an already existing Program.
-   */
   @Override
   protected void loadProgramInto(Program program, ImporterSettings settings)
       throws IOException, LoadException, CancelledException {
     // Unsupported.
   }
 
-  /**
-   * Ghidra glue
-   *
-   * First ROM checker/parser. If it's treated as `Raw`, we don't have `LoadSpec`.
-   */
   @Override
   public Collection<LoadSpec> findSupportedLoadSpecs(ByteProvider provider) throws IOException {
-    SnesCartridge cartridge = new SnesCartridge(provider);
+    SnesCartridge cartridge;
+    try {
+      cartridge = new SnesCartridge(provider);
+    } catch (IllegalStateException e) {
+      return List.of();
+    }
 
-    if (cartridge.getRomType() == RomType.Raw) {
+    if (cartridge.getRomMapType() == RomMapType.UNKNOWN) {
       return List.of();
     }
 
@@ -95,12 +78,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
     return loadSpecs;
   }
 
-  /**
-   * Main loader entry point.
-   *
-   * Detects mapping mode, maps ROM into memory, initializes MMIO/WRAM,
-   * and stores metadata into ProgramUserData.
-   */
   @Override
   protected List<Loaded<Program>> loadProgram(ImporterSettings settings)
       throws IOException, CancelledException {
@@ -108,12 +85,13 @@ public class SnesRomLoader extends AbstractProgramLoader {
     Loaded<Program> loaded = new Loaded<>(program, settings);
 
     boolean success = false;
+    int tx = program.startTransaction("Load SNES ROM");
     try {
       loadRom(program, settings);
-      createDefaultMemoryBlocks(program, settings);
       success = true;
       return List.of(loaded);
     } finally {
+      program.endTransaction(tx, success);
       if (!success) {
         loaded.close();
       }
@@ -123,14 +101,17 @@ public class SnesRomLoader extends AbstractProgramLoader {
   protected void loadRom(Program program, ImporterSettings settings)
       throws IOException, LoadException, CancelledException {
     ByteProvider provider = settings.provider();
-    SnesCartridge cartridge = new SnesCartridge(provider);
-    if (cartridge.getRomType() == RomType.Raw) {
+    SnesCartridge cartridge;
+    try {
+      cartridge = new SnesCartridge(provider);
+    } catch (IllegalStateException e) {
+      throw new LoadException("Cannot load unrecognized ROM type", e);
+    }
+
+    if (cartridge.getRomMapType() == RomMapType.UNKNOWN) {
       throw new LoadException("Cannot load unrecognized ROM type");
     }
 
-    // TODO: Augment data with metadata from Super Famicom.bml
-    // ie:
-    // SnesCartridge cartridge = new SnesCartridge(provider).with_bml();
     long romSize = cartridge.getRomSizeBytes();
     if (romSize <= 0) {
       throw new LoadException("ROM file contains no data after header adjustment.");
@@ -142,7 +123,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
             String.format(
                 "%s: mode=%s source=%s romOffset=0x%X romSize=0x%X",
                 LOADER_NAME,
-                cartridge.getRomType(),
+                cartridge.getRomMapType(),
                 cartridge.getMetadataSource(),
                 cartridge.getRomOffset(),
                 romSize));
@@ -155,7 +136,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
           memory.createFileBytes(provider.getName(), 0, provider.length(), is, settings.monitor());
     }
 
-    RomType romType = cartridge.getRomType();
+    RomMapType romType = cartridge.getRomMapType();
     for (MappingChunk chunk : romType.mappingChunks(romSize)) {
       mapChunkToCanonicalSpace(
           program,
@@ -164,7 +145,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
           romFileBytes,
           String.format("bank_%02x_%s", chunk.bank(), romType.toString().toLowerCase()),
           chunk.cpuAddress(),
-          // We need to add the ROM offset in case there's a copier header
           cartridge.getRomOffset() + chunk.fileOffset(),
           chunk.requestedSize(),
           settings.log());
@@ -173,7 +153,7 @@ public class SnesRomLoader extends AbstractProgramLoader {
     try {
       MemoryMap.createBlockSystemRegion(program);
       MemoryMap.createBlockWram(program);
-      MemoryMap.createBlockHighHalfRomMirrors(program, romType, 0x00);
+      MemoryMap.createBlockHighHalfRomMirrors(program, romType, cartridge.getRomHeader(), 0x00);
       Vectors.createVectorLabels(program);
 
       SnesOptions.initializeFromCartridge(program, cartridge);
@@ -184,12 +164,6 @@ public class SnesRomLoader extends AbstractProgramLoader {
     }
   }
 
-  /**
-   * Creates an initialized memory block backed by the original ROM FileBytes.
-   *
-   * Using FileBytes rather than an InputStream-backed block lets Ghidra display byte sources as
-   * {@code filename[offset, length]} in the Memory Map.
-   */
   private void mapChunkToCanonicalSpace(
       Program program,
       AddressSpace space,

@@ -4,45 +4,46 @@ package ghidra_snes.common;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-public enum RomType {
+public enum RomMapType {
   LoROM,
   HiROM,
   ExHiROM,
-  Raw;
+  SA_1,
+  SPC7110,
+  S_DD1,
+  UNKNOWN;
 
   public Iterable<MappingChunk> mappingChunks(long romSize) {
     return switch (this) {
       case LoROM ->
-          () -> new RomMappingIterator(romSize, 0x8000, 0x8000, new BankRange(0x80, 0xff));
-      case HiROM ->
-          () -> new RomMappingIterator(romSize, 0x10000, 0x0000, new BankRange(0xc0, 0xff));
-      case ExHiROM ->
-          () ->
-              new RomMappingIterator(
-                  romSize, 0x10000, 0x0000, new BankRange(0xc0, 0xff), new BankRange(0x40, 0x7f));
-      case Raw -> throw new IllegalStateException("Cannot map Raw ROM type");
+          () -> new RomMappingIterator(romSize,
+                  new BankRange(0x80, 0xff, 0x8000, 0x8000, 0));
+      case HiROM, SA_1 ->
+          () -> new RomMappingIterator(romSize,
+                  new BankRange(0xc0, 0xff, 0x10000, 0x0000, 0));
+      case ExHiROM, SPC7110, S_DD1 ->
+          () -> new RomMappingIterator(romSize,
+                  new BankRange(0xc0, 0xff, 0x10000, 0x0000, 0),
+                  new BankRange(0x40, 0x7f, 0x10000, 0x0000, 0),
+                  new BankRange(0x3e, 0x3f, 0x8000, 0x8000, 0x8000));
+      case UNKNOWN -> throw new IllegalStateException("Cannot map unknown ROM type");
     };
   }
 
   public record MappingChunk(int bank, long fileOffset, long cpuAddress, long requestedSize) {}
 
-  private record BankRange(int start, int end) {}
+  private record BankRange(int start, int end, int chunkSize, int addressStart, int fileSkip) {}
 
   private static final class RomMappingIterator implements Iterator<MappingChunk> {
     private final long romSize;
-    private final int chunkSize;
-    private final int addressStart;
     private final BankRange[] bankRanges;
 
     private int rangeIndex;
     private int bank;
     private long fileOffset;
 
-    private RomMappingIterator(
-        long romSize, int chunkSize, int addressStart, BankRange... bankRanges) {
+    private RomMappingIterator(long romSize, BankRange... bankRanges) {
       this.romSize = Math.max(0, romSize);
-      this.chunkSize = chunkSize;
-      this.addressStart = addressStart;
       this.bankRanges = bankRanges;
       this.rangeIndex = 0;
       this.bank = bankRanges.length == 0 ? 0x100 : bankRanges[0].start();
@@ -52,7 +53,12 @@ public enum RomType {
     @Override
     public boolean hasNext() {
       skipEmptyRanges();
-      return fileOffset < romSize && rangeIndex < bankRanges.length;
+      if (rangeIndex >= bankRanges.length) {
+        return false;
+      }
+
+      BankRange range = bankRanges[rangeIndex];
+      return fileOffset + range.fileSkip() < romSize;
     }
 
     @Override
@@ -61,11 +67,13 @@ public enum RomType {
         throw new NoSuchElementException();
       }
 
-      int size = (int) Math.min(chunkSize, romSize - fileOffset);
-      long memoryOffset = ((long) bank << 16) | (addressStart & 0xFFFF);
-      MappingChunk chunk = new MappingChunk(bank, fileOffset, memoryOffset, size);
+      BankRange range = bankRanges[rangeIndex];
+      long chunkFileOffset = fileOffset + range.fileSkip();
+      int size = (int) Math.min(range.chunkSize(), romSize - chunkFileOffset);
+      long memoryOffset = ((long) bank << 16) | (range.addressStart() & 0xffff);
+      MappingChunk chunk = new MappingChunk(bank, chunkFileOffset, memoryOffset, size);
 
-      fileOffset += size;
+      fileOffset += range.fileSkip() + size;
       bank++;
       advanceRangeIfNeeded();
 

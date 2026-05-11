@@ -10,3 +10,7 @@ bin
 .kotlin
 
 .env
+.DS_Store
+
+# Ignore test-related data
+src/test/resources/data/

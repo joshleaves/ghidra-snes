@@ -3,7 +3,8 @@ package ghidra_snes.ghidra;
 
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Program;
-import ghidra_snes.common.RomType;
+import ghidra_snes.common.RomMapType;
+import ghidra_snes.common.SnesRomHeader;
 import ghidra_snes.common.registers.Mmio;
 import java.util.List;
 
@@ -122,17 +123,18 @@ public class MemoryMap {
    * HiROM for now.
    *
    * @param program the current program
-   * @param romType detected ROM mapping type
+   * @param romMapType detected ROM mapping type
+   * @param romHeader detected ROM header, used to anchor bank `$00` mirrors
    * @param maxBank highest mirror bank to expose
    * @return number of blocks created
    */
-  public static int createBlockHighHalfRomMirrors(Program program, RomType romType, int maxBank)
+  public static int createBlockHighHalfRomMirrors(Program program, RomMapType romMapType, SnesRomHeader romHeader, int maxBank)
       throws Exception {
     int created = 0;
     int lastBank = Math.max(0x00, Math.min(maxBank, 0xff));
 
     for (int bank = 0x00; bank <= lastBank; bank++) {
-      Long canonicalStart = canonicalRomMirrorStart(romType, bank);
+      Long canonicalStart = canonicalRomMirrorStart(romMapType, romHeader, bank);
       if (canonicalStart == null) {
         continue;
       }
@@ -161,25 +163,63 @@ public class MemoryMap {
    * <p>This converts a CPU-visible {@code 8000-FFFF} ROM mirror bank into the
    * corresponding canonical high-half ROM address.
    *
-   * @param romType detected ROM mapping type
+   * @param romMapType detected ROM mapping type
+   * @param romHeader detected ROM header, used to anchor bank `$00` mirrors
    * @param bank mirror bank index
    * @return canonical ROM address, or null if the bank is not mirrored
    */
-  private static Long canonicalRomMirrorStart(RomType romType, int bank) {
-    return switch (romType) {
+  static Long canonicalRomMirrorStart(
+      RomMapType romMapType, SnesRomHeader romHeader, int bank) {
+    if (bank == 0x00) {
+      return firstBankMirrorStart(romMapType, romHeader);
+    }
+
+    return switch (romMapType) {
       case LoROM -> {
-        if (bank >= 0x00 && bank <= 0x7d) {
+        if (bank >= 0x01 && bank <= 0x7d) {
           yield 0x800000L + ((long) bank << 16) + 0x8000L;
         }
         yield null;
       }
-      case HiROM, ExHiROM -> {
-        if (bank >= 0x00 && bank <= 0x3f) {
+      case HiROM, ExHiROM, SA_1, SPC7110, S_DD1 -> {
+        if (bank >= 0x01 && bank <= 0x3f) {
           yield 0xc00000L + ((long) bank << 16) + 0x8000L;
         }
         yield null;
       }
-      case Raw -> null;
+      case UNKNOWN -> null;
     };
+  }
+
+  /**
+   * Resolves the canonical source for the CPU-visible first ROM mirror at
+   * {@code $00:8000-$FFFF}.
+   *
+   * <p>The first mirror must contain the detected internal ROM header at
+   * {@code $00:FFC0-$00:FFFF}. This method returns the canonical memory address
+   * that backs that visible mirror, not the raw ROM file offset.
+   *
+   * <p>This matters for enhancement-chip cartridges: SA-1 and S-DD1 commonly
+   * keep their header at the LoROM header location while their canonical ROM
+   * view is HiROM-like.
+   */
+  static long firstBankMirrorStart(RomMapType romMapType, SnesRomHeader romHeader) {
+    if (romHeader.location() == SnesRomHeader.LOROM_HEADER_OFFSET - 1) {
+      return switch (romMapType) {
+        case LoROM -> 0x808000L;
+        case HiROM, ExHiROM, SA_1, SPC7110, S_DD1 -> 0xc00000L;
+        case UNKNOWN -> 0x808000L;
+      };
+    }
+
+    if (romHeader.location() == SnesRomHeader.HIROM_HEADER_OFFSET - 1) {
+      return 0xc08000L;
+    }
+
+    if (romHeader.location() == SnesRomHeader.EXHIROM_HEADER_OFFSET - 1) {
+      return 0x408000L;
+    }
+
+    return romHeader.location() - (SnesRomHeader.LOROM_HEADER_OFFSET - 1);
   }
 }

@@ -9,6 +9,7 @@ plugins {
   id 'com.opencastsoftware.gradle.buildinfo' version '0.3.0'
   id 'com.diffplug.spotless' version "8.4.0"
   id 'com.adarshr.test-logger' version '4.0.0'
+  id 'jacoco'
 }
 
 repositories {
@@ -31,7 +32,7 @@ buildInfo {
   packageName = 'ghidra_snes'
   className = 'BuildInfo'
   properties = [
-    PLUGIN_VERSION: "0.1.1",
+    PLUGIN_VERSION: "0.2.0",
     PLUGIN_GHIDRA_COMPATIBILITY: "12.0.4",
     PLUGIN_BUILD_DATE: buildDate,
     PLUGIN_BUILD_COMMIT: gitCommit,
@@ -58,6 +59,30 @@ test {
     showCauses = true
     showStackTraces = true
     showStandardStreams = false
+  }
+
+  testLogging {
+    // set options for log level LIFECYCLE
+    events "failed"
+  }
+}
+
+jacocoTestReport {
+  dependsOn test
+  reports {
+    html.required = true
+    xml.required = true
+  }
+
+  afterEvaluate {
+    classDirectories.setFrom(
+      files(classDirectories.files.collect {
+        fileTree(dir: it, exclude: [
+          '**/BuildInfo.class',
+          '**/generated/**'
+        ])
+      })
+    )
   }
 }
 
@@ -94,17 +119,23 @@ spotless {
 def ghidraInstallDir
 
 if (System.env.GHIDRA_INSTALL_DIR) {
-    ghidraInstallDir = System.env.GHIDRA_INSTALL_DIR
+  ghidraInstallDir = System.env.GHIDRA_INSTALL_DIR
 }
 else if (project.hasProperty("GHIDRA_INSTALL_DIR")) {
-    ghidraInstallDir = project.getProperty("GHIDRA_INSTALL_DIR")
+  ghidraInstallDir = project.getProperty("GHIDRA_INSTALL_DIR")
 }
 
 if (ghidraInstallDir) {
-    apply from: new File(ghidraInstallDir).getCanonicalPath() + "/support/buildExtension.gradle"
+  apply from: new File(ghidraInstallDir).getCanonicalPath() + "/support/buildExtension.gradle"
 }
 else {
-    throw new GradleException("GHIDRA_INSTALL_DIR is not defined!")
+  throw new GradleException("GHIDRA_INSTALL_DIR is not defined!")
+}
+
+tasks.withType(Zip).configureEach {
+  exclude '.github/**'
+  exclude 'gradle/**'
+  exclude 'gradle.properties'
 }
 
 tasks.register('installLocalExtension', Copy) {
