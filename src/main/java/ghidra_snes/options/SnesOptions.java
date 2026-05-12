@@ -24,8 +24,7 @@ public final class SnesOptions {
   private static final String  DEFAULT_CART_TITLE          = "";
   private static final int     DEFAULT_CART_SRAM_SIZE      = 0;
   private static final long    DEFAULT_HEADER_LOCATION     = SnesRomHeader.LOROM_HEADER_OFFSET - 1;
-  private static final byte[]  DEFAULT_HEADER_RAW_BYTES    =
-      new byte[Math.toIntExact(SnesRomHeader.HEADER_SIZE)];
+  private static final byte[]  DEFAULT_HEADER_RAW_BYTES    = new byte[Math.toIntExact(SnesRomHeader.HEADER_SIZE)];
   private static final long    DEFAULT_ROM_SIZE            = 0;
   private static final boolean DEFAULT_FILE_HAS_SMC_HEADER = false;
   private static final long    DEFAULT_FILE_ROM_OFFSET     = 0;

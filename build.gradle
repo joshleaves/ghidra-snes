@@ -18,6 +18,7 @@ repositories {
 
 sourceSets { main { java { srcDir(layout.buildDirectory.dir('generated/sources/buildinfo/java/main')) } } }
 
+// Resolve the current Git commit for reproducible support/debug information.
 def gitCommit = "unknown"
 try {
   def detectedCommit = "git rev-parse --short HEAD".execute([], rootDir).text.trim()
@@ -26,14 +27,24 @@ try {
   }
 } catch (Exception ignored) {}
 
+// UTC timestamp embedded into generated build metadata.
 def buildDate = new Date().format("yyyy-MM-dd HH:mm 'UTC'", TimeZone.getTimeZone('UTC'))
 
+// Build-time metadata embedded into the extension.
+//
+// Values are exposed through ghidra_snes.BuildInfo and used by:
+//   - the About dialog
+//   - support/debug information
+//   - CI/release tracking
+//
+// Stable metadata values live in gradle.properties so releases do not require
+// editing build logic.
 buildInfo {
-  packageName = 'ghidra_snes'
+  packageName = property('plugin.packageName')
   className = 'BuildInfo'
   properties = [
-    PLUGIN_VERSION: "0.2.0",
-    PLUGIN_GHIDRA_COMPATIBILITY: "12.0.4",
+    PLUGIN_VERSION: property('plugin.version'),
+    PLUGIN_GHIDRA_COMPATIBILITY: property('plugin.ghidraCompatibility'),
     PLUGIN_BUILD_DATE: buildDate,
     PLUGIN_BUILD_COMMIT: gitCommit,
   ]
@@ -116,6 +127,14 @@ spotless {
 }
 
 
+// Resolve the active Ghidra installation.
+//
+// Priority order:
+//   1. GHIDRA_INSTALL_DIR environment variable
+//   2. -PGHIDRA_INSTALL_DIR Gradle project property
+//
+// The project property allows CI/local builds to compile against Ghidra
+// without exporting a persistent shell environment variable.
 def ghidraInstallDir
 
 if (System.env.GHIDRA_INSTALL_DIR) {
@@ -132,12 +151,67 @@ else {
   throw new GradleException("GHIDRA_INSTALL_DIR is not defined!")
 }
 
+// Keep generated extension archives deterministic and clean.
 tasks.withType(Zip).configureEach {
   exclude '.github/**'
   exclude 'gradle/**'
   exclude 'gradle.properties'
 }
 
+// Returns the newest extension archive produced in dist/.
+def latestBuiltExtensionZip = {
+  def extensionZips = fileTree('dist') {
+    include '*.zip'
+  }.files.sort { a, b -> b.lastModified() <=> a.lastModified() }
+
+  if (extensionZips.isEmpty()) {
+    throw new GradleException("No extension zip found in dist/. Run buildExtension first.")
+  }
+
+  return extensionZips.first()
+}
+
+// Temporary external module used by the Ghidra harness.
+//
+// Harness tests load the project's local language definitions through
+// ghidra.external.modules instead of requiring the extension to be installed
+// into the user's real Ghidra environment.
+def harnessModulesRoot = layout.buildDirectory.dir('harness-modules')
+def harnessModuleDir = layout.buildDirectory.dir('harness-modules/ghidra-snes')
+
+// Builds a minimal external module exposing only local language specs.
+tasks.register('prepareHarnessLanguages', Sync) {
+  group = 'Ghidra Private'
+  description = 'Builds a temporary external module with local language specs for harness tests.'
+
+  from('Module.manifest') {
+    into 'ghidra-snes'
+  }
+  from('data/languages') {
+    into 'ghidra-snes/data/languages'
+  }
+
+  into(harnessModulesRoot)
+}
+
+// Inject local language definitions into the Ghidra harness during tests.
+tasks.named('test', Test) {
+  dependsOn tasks.named('prepareHarnessLanguages')
+
+  doFirst {
+    def externalModulesOverride = System.getProperty('ghidra.external.modules')
+    def externalModulesPath =
+      (externalModulesOverride != null && !externalModulesOverride.isBlank())
+        ? externalModulesOverride
+        : harnessModuleDir.get().asFile.absolutePath
+
+    systemProperty 'ghidra.external.modules', externalModulesPath
+  }
+}
+
+// Convenience task for local development.
+//
+// Installs the latest built extension into a user-managed extensions directory.
 tasks.register('installLocalExtension', Copy) {
   group = 'Ghidra Private'
   description = 'Builds and installs the extension into the configured local Ghidra installation.'
@@ -159,15 +233,7 @@ tasks.register('installLocalExtension', Copy) {
   }
 
   from({
-    def extensionZips = fileTree('dist') {
-      include '*.zip'
-    }.files.sort { a, b -> b.lastModified() <=> a.lastModified() }
-
-    if (extensionZips.isEmpty()) {
-      throw new GradleException("No extension zip found in dist/. Run buildExtension first.")
-    }
-
-    zipTree(extensionZips.first())
+    zipTree(latestBuiltExtensionZip())
   })
   into extensionsDir
 }

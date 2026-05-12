@@ -41,6 +41,8 @@ Loader implementation:
 - ⚠️ [S-DD1](https://problemkaputt.de/fullsnes.htm#snescartsdd1datadecompressor2games): Partial support. Canonical ROM views are available, but some mappings currently differ from emulator behavior.
 - ✅ [SPC7110](https://problemkaputt.de/fullsnes.htm#snescartspc7110datadecompressor3games): Supported.
 
+More details: [Functional tests](FUNCTIONAL.md)
+
 ## 65816 language support
 
 The extension includes a SNES-oriented 65816 language definition:
