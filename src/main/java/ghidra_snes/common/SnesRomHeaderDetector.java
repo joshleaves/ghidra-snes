@@ -44,6 +44,8 @@ public final class SnesRomHeaderDetector {
       }
 
       SnesRomHeader header = new SnesRomHeader(location, provider.readBytes(location, SnesRomHeader.HEADER_SIZE));
+      long declaredRomSize = header.romSize();
+
       // Check 1: Header checksum + complement
       if (((header.checksum() ^ header.complementChecksum()) & 0xffff) != 0xffff) {
         continue;
@@ -53,11 +55,11 @@ public final class SnesRomHeaderDetector {
         continue;
       }
       // Check 3: Valid ROM size
-      if (header.romSize() < romSize) {
+      if (declaredRomSize < romSize) {
         continue;
       }
       // Check 4: No extravagant ROM size (12M)
-      if (header.romSize() >= MAX_REASONABLE_ROM_SIZE) {
+      if (declaredRomSize >= MAX_REASONABLE_ROM_SIZE) {
         continue;
       }
       // Check 5: Printable title
@@ -65,7 +67,7 @@ public final class SnesRomHeaderDetector {
         continue;
       }
       // Check 6: Checksum verification against file data
-      int romChecksum = Checksum.snesChecksum(provider, romOffset, romSize, header.romSize(), header.romMapType());
+      int romChecksum = Checksum.snesChecksum(provider, romOffset, romSize, declaredRomSize, header.romMapType());
       if (header.checksum() != romChecksum) {
         continue;
       }
