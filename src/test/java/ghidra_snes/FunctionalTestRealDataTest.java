@@ -161,8 +161,22 @@ class FunctionalTestRealDataTest {
       80,
       0xde89,
       List.of(
-
+        new DataBank(0x00, 0xC0, "2532364e1dc57f5fc6a7afd0db20edcee129906d5baec1269bdf38913092e707"),
+        new DataBank(0x3F, 0xff, "1b7d567aa0a7a2c2ac0207d33ee68adbe78f4c88e9c3db42a186fa26ffe41224"),
+        new DataBank(0x40, 0x40, "be26f25dfb267c11ef5592bb504cd367e5733833bbd97fca2cde6b5d7c543004"),
+        new DataBank(0x4f, 0x4f, "4bfa5ea511907153151bad12baa1f45903b9d1b03456fe5cbd77aa0fb41a4029")
       )),
+    // Joyous adventures of Japanese Bull van Winkle
+    new RealDataCase(
+      "9fc7a66464e71d0f056fed2b560f527a5af69034c96293a2731107479763a9d8",
+      RomMapType.SPC7110,
+      0x10000,
+      48,
+      0xe28c,
+      List.of(
+        new DataBank(0x00, 0xC0, "4270a0bf878849bc81e5300959b1f9f0d281a5a9521778e38f3b505261139dce"),
+        new DataBank(0x2f, 0xEf, "d9c233c8f34d97fbe94977c2e5fba48b735f2def7a5a4a07a6d6c115574d7a56")
+    )),
     // Big monsters, Electric Boogaloo
     new RealDataCase(
       "b8f31f3292609890e6321e6d925d60266c93e91f1a0e5999f7473adc7bb265f3",

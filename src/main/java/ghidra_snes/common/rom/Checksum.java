@@ -45,8 +45,8 @@ public final class Checksum {
    * Computes the canonical SNES checksum for a ROM image using decoded header metadata.
    *
    * <p>For standard mappings, the ROM is expanded up to the size declared by the internal ROM
-   * header. For SPC7110 cartridges, the checksum is currently calculated over the raw ROM image
-   * without generic power-of-two mirroring, matching known Tengai Makyou Zero behavior.
+   * header. SPC7110 cartridges use special retail mirroring behavior instead of the generic
+   * power-of-two expansion used by standard mappings.
    *
    * @param provider byte source containing the ROM image
    * @param romOffset offset of the ROM data within the provider (after any copier header)
@@ -68,11 +68,49 @@ public final class Checksum {
     }
 
     if (romMapType == RomMapType.SPC7110) {
-      return checksumRange(provider, romOffset, romSize);
+      return checksumSpc7110(provider, romOffset, romSize, declaredRomSize);
     }
 
     long mappedSize = Math.max(romSize, declaredRomSize);
     return checksumMappedRom(provider, romOffset, romSize, mappedSize);
+  }
+
+  /**
+   * Computes SPC7110 checksums using observed retail cartridge mirroring behavior.
+   *
+   * <p>SuperFamicheck distinguishes SPC7110+RTC cartridges from plain SPC7110 cartridges through
+   * the hardware subtype byte. The current checksum API only receives the decoded map type, so this
+   * method mirrors the same behavior through the known retail dump sizes:
+   *
+   * <ul>
+   *   <li>2 MiB SPC7110 ROMs checksum the raw ROM once
+   *   <li>3 MiB SPC7110 ROMs checksum the full ROM twice
+   *   <li>5 MiB SPC7110+RTC ROMs checksum the raw ROM once
+   * </ul>
+   *
+   * <p>This covers the known SPC7110 retail layouts without applying the generic standard-ROM
+   * expansion rules to Tengai Makyou Zero.
+   */
+  private static int checksumSpc7110(
+      ByteProvider provider, long romOffset, long romSize, long declaredRomSize)
+      throws IOException {
+    if (romSize == 0x00300000L && declaredRomSize > romSize) {
+      return checksumRepeatedRom(provider, romOffset, romSize, 2);
+    }
+
+    return checksumRange(provider, romOffset, romSize);
+  }
+
+  private static int checksumRepeatedRom(
+      ByteProvider provider, long romOffset, long romSize, int repeatCount) throws IOException {
+    byte[] image = provider.readBytes(romOffset, romSize);
+    byte[] repeated = new byte[Math.toIntExact(romSize * repeatCount)];
+
+    for (int index = 0; index < repeatCount; index++) {
+      System.arraycopy(image, 0, repeated, Math.toIntExact(romSize * index), image.length);
+    }
+
+    return checksumBytes(repeated);
   }
 
   private static int checksumMappedRom(

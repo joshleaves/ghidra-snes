@@ -39,7 +39,7 @@ Loader implementation:
 - ✅ [DSP-n](https://problemkaputt.de/fullsnes.htm#snescartdspnst010st011preprogrammednecupd77c25cpu23games): Supported.
 - ✅ [OBC1](https://problemkaputt.de/fullsnes.htm#snescartobc1objcontroller1game): Supported.
 - ⚠️ [S-DD1](https://problemkaputt.de/fullsnes.htm#snescartsdd1datadecompressor2games): Partial support. Canonical ROM views are available, but some mappings currently differ from emulator behavior.
-- ✅ [SPC7110](https://problemkaputt.de/fullsnes.htm#snescartspc7110datadecompressor3games): Supported.
+- ⚠️ [SPC7110](https://problemkaputt.de/fullsnes.htm#snescartspc7110datadecompressor3games): Partial support. Canonical ROM views are available, but some mappings currently differ from emulator behavior.
 
 More details: [Functional tests](FUNCTIONAL.md)
 

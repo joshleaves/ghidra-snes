@@ -177,7 +177,7 @@ def latestBuiltExtensionZip = {
 // ghidra.external.modules instead of requiring the extension to be installed
 // into the user's real Ghidra environment.
 def harnessModulesRoot = layout.buildDirectory.dir('harness-modules')
-def harnessModuleDir = layout.buildDirectory.dir('harness-modules/ghidra-snes')
+def harnessModuleDir = layout.buildDirectory.dir('harness-modules/ghidra-snes-harness')
 
 // Builds a minimal external module exposing only local language specs.
 tasks.register('prepareHarnessLanguages', Sync) {

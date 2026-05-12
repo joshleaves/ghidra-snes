@@ -13,14 +13,15 @@ The [functional test suite](src/test/java/ghidra_snes/FunctionalTestRealDataTest
 | Japanese, pink, and shaped like a friend                      | SA-1 Chip                | ✅ |
 | A plumber tries its hands at a beloved Japanese genre         | SA-1 Chip                | ✅ |
 | French attempt to remake the Earth in our image               | Basic HiROM              | ✅ |
-| Holidays in Jipang (Episode Zero)                             | SPC7110 Chip             | ✅ |
+| Holidays in Jipang (Episode Zero)                             | SPC7110 Chip             | ⚠️[^err_partial] |
+| Joyous adventures of Japanese Bull van Winkle[^err_partial]   | SPC7110 Strange Checksum | ⚠️[^err_partial] |
 | Big monsters, Electric Boogaloo                               | Basic ExHiROM            | ✅ |
 | These stories are fantastic                                   | The Dhaos of real data   | ✅ |
-| A sky to swim for                                             | The last boss of SDD-1   | ⚠️[^err_sdd1] |
+| A sky to swim for                                             | The last boss of SDD-1   | ⚠️[^err_partial] |
 
 [^phrack49]: This test data fixture embeds the complete text of Aleph One's famous [Smashing The Stack For Fun And Profit](https://phrack.org/issues/49/14), originally published in Phrack 49.
 
-[^err_sdd1]: Partial support: the canonical `$C0-$FF` FILE view is mapped, but S-DD1 banks don't map regularly. The loader currently exposes a static HiROM-like view, which can diverge from [Mesen2](https://github.com/SourMesen/Mesen2)'s runtime memory view, especially around `$40+`.
+[^err_partial]: Partial support: the canonical `$C0-$FF` FILE view is mapped, but further banks don't map regularly. The loader currently exposes a static HiROM-like view, which can diverge from [Mesen2](https://github.com/SourMesen/Mesen2)'s runtime memory view, especially around `$40+`.
 
 # Notes to add more tests
 
