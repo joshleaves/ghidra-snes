@@ -3,12 +3,17 @@ package ghidra_snes;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 import ghidra.app.util.bin.ByteArrayProvider;
+import ghidra.app.util.opinion.LoadResults;
+import ghidra.program.model.listing.Program;
+import ghidra.program.model.mem.MemoryAccessException;
 import ghidra_snes.common.RomMapType;
 import ghidra_snes.common.SnesRomHeader;
 import ghidra_snes.common.SnesRomHeaderDetector;
 import ghidra_snes.common.rom.Checksum;
+import ghidra_snes.testing.ProgramFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -222,6 +227,11 @@ class FunctionalTestRealDataTest {
       Arguments.of(Named.of(data.shortSha256() + " is checked against " + data.banksData().size() + " mappings", data)));
   }
 
+  static Stream<Arguments> realDataHeaderMirrorTitleCases() {
+    return REAL_DATA.stream().map(data ->
+      Arguments.of(Named.of(data.shortSha256() + " mirrors header title at $00:FFC0", data)));
+  }
+
   @Order(0)
   @DisplayName("Auto-detects the header")
   @ParameterizedTest(name = "[{index}] {0}")
@@ -298,13 +308,16 @@ class FunctionalTestRealDataTest {
     Assumptions.assumeTrue(Files.exists(data.path()), () -> "Missing real data: " + data.sha256());
 
     ByteArrayProvider provider = new ByteArrayProvider(Files.readAllBytes(data.path()));
-    SnesRomHeader header = new SnesCartridge(provider).getRomHeader();
+    SnesCartridge cartridge = new SnesCartridge(provider);
+    SnesRomHeader header = cartridge.getRomHeader();
+    long romOffset = cartridge.getRomOffset();
+    long romSize = provider.length() - romOffset;
     int checksum = Checksum.snesChecksum(
-      provider, 0,
-      provider.length(),
+      provider,
+      romOffset,
+      romSize,
       header.romSize(),
-      header.romMapType()
-    );
+      header.romMapType());
     assertEquals(data.checksum(), checksum);
   }
 
@@ -336,5 +349,36 @@ class FunctionalTestRealDataTest {
 
       assertEquals(dataBank.bankSha256(), dataSha256);
     }
+  }
+
+  @Order(7)
+  @DisplayName("Mirrors header title at $00:FFC0")
+  @ParameterizedTest(name = "[{index}] {0}")
+  @MethodSource("realDataHeaderMirrorTitleCases")
+  void mirrorsHeaderTitleAtBank00Ffc0(RealDataCase data) throws Exception {
+    Assumptions.assumeTrue(Files.exists(data.path()), () -> "Missing real data: " + data.sha256());
+
+    byte[] romData = Files.readAllBytes(data.path());
+    SnesRomHeader header;
+    try (ByteArrayProvider provider = new ByteArrayProvider(data.sha256() + ".sfc", romData)) {
+      header = SnesRomHeaderDetector.autoDetectRomHeader(provider);
+    }
+
+    byte[] mirroredTitle = new byte[21];
+    try (LoadResults<Program> loadResults = ProgramFactory.loadSnesRom(data.sha256(), romData)) {
+      loadResults.getPrimary().apply(program -> {
+        try {
+          int read =
+              program.getMemory().getBytes(
+                  program.getAddressFactory().getDefaultAddressSpace().getAddress(0x00ffc0L),
+                  mirroredTitle);
+          assertEquals(mirroredTitle.length, read);
+        } catch (MemoryAccessException e) {
+          throw new AssertionError("Cannot read mirrored ROM title at $00:FFC0", e);
+        }
+      });
+    }
+
+    assertArrayEquals(header.titleBytes(), mirroredTitle);
   }
 }
