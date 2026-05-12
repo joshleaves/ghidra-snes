@@ -52,6 +52,18 @@ class FunctionalTestRealDataTest {
   }
 
   private static final List<RealDataCase> REAL_DATA = List.of(
+    // Smashing The Stack For Fun And Profit
+    new RealDataCase(
+      "smashing_the_stack.sfc",
+      RomMapType.LoROM,
+      0x8000,
+      2,
+      0xD07B,
+      List.of(
+        new DataBank(0x00, 0x80, "6250c714cef198ffb512c6fe6286903bed98fdaa496692ec6aa429d70b40fefe"),
+        new DataBank(0x01, 0x81, "c89789b7187a1053e8acb3ec35ae6b15de9b3d2a63128604e862e91de76a7cee")
+      )
+    ),
     // A plumber all over the world
     new RealDataCase(
       "5cc54b1e5c8d3c7701a5e20514145c3b36f15f26fe0a4fe6d2e43677e4b4eda9",

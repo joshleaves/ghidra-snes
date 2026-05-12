@@ -4,7 +4,7 @@ SNES tooling for Ghidra.
 
 This project provides a Ghidra extension for loading and working with SNES ROMs. It currently includes:
 
-- a SNES ROM loader with LoROM / HiROM support
+- a SNES ROM loader
 - a 65816 language specification tailored for SNES analysis
 - SNES memory helpers (MMIO, WRAM, mirrors) and register/vector labels
 
@@ -32,14 +32,14 @@ Loader implementation:
 
 - ✅ [LoROM](https://problemkaputt.de/fullsnes.htm#snescartlorommappingromdividedinto32kbanksaround1500games): Supported.
 - ✅ [HiROM](https://problemkaputt.de/fullsnes.htm#snescarthirommappingromdividedinto64kbanksaround500games): Supported.
-- ⚠️ [ExHiRom](https://problemkaputt.de/fullsnes.htm#snescartridgeromimageinterleave): Partial support, if the ROM is non-interleaved.
-- ⚠️ [SA-1](https://problemkaputt.de/fullsnes.htm#snescartsa1programmable65c816cpuakasuperaccelerator35games): Partial support, is detected as `LoROM` so the canonical view is wrong.
-- 🌀 [GSU-n](https://problemkaputt.de/fullsnes.htm#snescartgsunprogrammablerisccpuakasuperfxmariochip10games): Not tested yet.
-- ✅ [Capcom CX-4](https://problemkaputt.de/fullsnes.htm#snescartcapcomcx4programmablerisccpumegamanx232games): Supported, maps as `LoROM`.
-- 🌀 [DSP-n](https://problemkaputt.de/fullsnes.htm#snescartdspnst010st011preprogrammednecupd77c25cpu23games): Not tested yet.
-- 🌀 [OBC1](https://problemkaputt.de/fullsnes.htm#snescartobc1objcontroller1game): Not tested yet.
-- ⚠️ [S-DD1](https://problemkaputt.de/fullsnes.htm#snescartsdd1datadecompressor2games): Not supported, the canonical view ends up wrong.
-- 🌀 [SPC7110](https://problemkaputt.de/fullsnes.htm#snescartspc7110datadecompressor3games): Not tested yet.
+- ✅ [ExHiROM](https://problemkaputt.de/fullsnes.htm#snescartridgeromimageinterleave): Supported.
+- ✅ [SA-1](https://problemkaputt.de/fullsnes.htm#snescartsa1programmable65c816cpuakasuperaccelerator35games): Supported.
+- ✅ [GSU-n](https://problemkaputt.de/fullsnes.htm#snescartgsunprogrammablerisccpuakasuperfxmariochip10games): Supported.
+- ✅ [Capcom CX-4](https://problemkaputt.de/fullsnes.htm#snescartcapcomcx4programmablerisccpumegamanx232games): Supported.
+- ✅ [DSP-n](https://problemkaputt.de/fullsnes.htm#snescartdspnst010st011preprogrammednecupd77c25cpu23games): Supported.
+- ✅ [OBC1](https://problemkaputt.de/fullsnes.htm#snescartobc1objcontroller1game): Supported.
+- ⚠️ [S-DD1](https://problemkaputt.de/fullsnes.htm#snescartsdd1datadecompressor2games): Partial support. Canonical ROM views are available, but some mappings currently differ from emulator behavior.
+- ✅ [SPC7110](https://problemkaputt.de/fullsnes.htm#snescartspc7110datadecompressor3games): Supported.
 
 ## 65816 language support
 
@@ -71,16 +71,16 @@ When importing a ROM, select the **SNES ROM Loader** format.
 
 # Third-party code notice
 
-This project includes code originally sourced from [ghidra-65816](https://github.com/achan1989/ghidra-65816).
+- This project includes code originally sourced from [ghidra-65816](https://github.com/achan1989/ghidra-65816), licensed under the MIT License. Parts of the codebase, notably the 65816 language specification, are derived from that repository, with modifications for compatibility, fixes, and integration.
 
-All credit for the original implementation goes to its respective authors.
+- Parts of the SPC7110 checksum behavior were implemented based on observations from [SuperFamiCheck](https://github.com/Optiroc/SuperFamicheck), licensed under the MIT License.
 
-Parts of the codebase, notably the 65816 language specification, are derived from that repository, with modifications for compatibility, fixes, and integration.
+## Additional resources
 
-Additional resources:
-
+- A lot of informations about the SNES Memory Map was taken from the [SNESDev Wiki](https://snes.nesdev.org/wiki/Memory_map).
 - The SNES register list is based on [undisbeliever's Register Cheat Sheet](https://undisbeliever.net/snesdev/registers/cheatsheet.html).
 - The Super Famicom logo icon is sourced from [Wikimedia Commons](https://en.wikipedia.org/wiki/File:Super_Famicom_logo.svg). It is considered to be in the public domain due to lack of originality, but may still be subject to trademark laws.
+- One test ROM embeds the complete text of Aleph One's famous [Smashing The Stack For Fun And Profit](https://phrack.org/issues/49/14), originally published in Phrack 49, for testing and debugging purposes.
 
 # Special thanks
 

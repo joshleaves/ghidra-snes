@@ -30,7 +30,13 @@ import java.util.Arrays;
  * dumps usually do not need this padding; it mainly matters for unusual or space-saving homebrew
  * dumps.
  *
- * <p>Source: <a href="https://snes.nesdev.org/wiki/ROM_header#Checksum">SNesDev: Rom header</a>
+ * <p>Sources:
+ *
+ * <ul>
+ *   <li><a href="https://snes.nesdev.org/wiki/ROM_header#Checksum">SNESDev: Rom header</a></li>
+ *   <li><a href="https://github.com/Optiroc/SuperFamicheck">GitHub: SuperFamicheck</a> for SPC7110
+ *       checksum behavior observations and implementation details</li>
+ * </ul>
  */
 public final class Checksum {
   private Checksum() {}

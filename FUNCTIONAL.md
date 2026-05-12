@@ -4,6 +4,7 @@ The [functional test suite](src/test/java/ghidra_snes/FunctionalTestRealDataTest
 
 | Data name | Rationale | Status |
 |-----------|-----------|--------|
+| Smashing The Stack For Fun And Profit[^phrack49]              | Test LoROM               | ✅ |
 | A plumber all over the world                                  | Base LoROM               | ✅ |
 | Women don't get enough representation in Sci-Fi               | Biggest LoROM            | ✅ | 
 | A robot from the future suffers a copy protection error       | Notorious mapping issues | ✅ |
@@ -17,8 +18,9 @@ The [functional test suite](src/test/java/ghidra_snes/FunctionalTestRealDataTest
 | These stories are fantastic                                   | The Dhaos of real data   | ✅ |
 | A sky to swim for                                             | The last boss of SDD-1   | ⚠️[^err_sdd1] |
 
-[^err_sdd1]: Partial support: the canonical `$C0-$FF` FILE view is mapped, but S-DD1 banks don't map regularly. The loader currently exposes a static HiROM-like view, which can diverge from [Mesen2](https://github.com/SourMesen/Mesen2)'s runtime memory view, especially around `$40+`.
+[^phrack49]: This test data fixture embeds the complete text of Aleph One's famous [Smashing The Stack For Fun And Profit](https://phrack.org/issues/49/14), originally published in Phrack 49.
 
+[^err_sdd1]: Partial support: the canonical `$C0-$FF` FILE view is mapped, but S-DD1 banks don't map regularly. The loader currently exposes a static HiROM-like view, which can diverge from [Mesen2](https://github.com/SourMesen/Mesen2)'s runtime memory view, especially around `$40+`.
 
 # Notes to add more tests
 
