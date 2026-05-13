@@ -185,10 +185,10 @@ tasks.register('prepareHarnessLanguages', Sync) {
   description = 'Builds a temporary external module with local language specs for harness tests.'
 
   from('Module.manifest') {
-    into 'ghidra-snes'
+    into 'ghidra-snes-harness'
   }
   from('data/languages') {
-    into 'ghidra-snes/data/languages'
+    into 'ghidra-snes-harness/data/languages'
   }
 
   into(harnessModulesRoot)
