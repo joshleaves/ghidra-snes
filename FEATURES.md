@@ -24,7 +24,7 @@
 
 ## Memory Mapping
 
-- Canonical SNES ROM memory mapping
+- Canonical SNES ROM memory mapping (depending on mapping type)
 - Canonical SNES RAM memory mapping (`$7E:0000-$7F-FFFF`)
 - Canonical System Area mapping (`$00:0000-$5FFF`)
 - First-bank ROM mirrors (`$00:8000-$FFFF`) correctly expose internal ROM headers
@@ -49,14 +49,5 @@
 ## Current Limitations
 
 - Enhancement chips are currently treated as memory-layout variants, not full hardware implementations
-- SA-1, S-DD1, and SPC7110 mappings are intended for static analysis, not emulation accuracy
+- S-DD1 and SPC7110 mappings are intended for static analysis, not emulation accuracy
 - Some enhancement-chip mirror behavior may still differ from emulator implementations
-- No automatic update mechanism yet
-
-## Planned / Future Work
-
-- Improved enhancement-chip mapping accuracy
-- Loader UX polish
-- Additional ROM metadata support
-- Optional update checker
-- Additional analyzers and auto-labeling
