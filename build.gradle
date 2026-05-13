@@ -158,19 +158,6 @@ tasks.withType(Zip).configureEach {
   exclude 'gradle.properties'
 }
 
-// Returns the newest extension archive produced in dist/.
-def latestBuiltExtensionZip = {
-  def extensionZips = fileTree('dist') {
-    include '*.zip'
-  }.files.sort { a, b -> b.lastModified() <=> a.lastModified() }
-
-  if (extensionZips.isEmpty()) {
-    throw new GradleException("No extension zip found in dist/. Run buildExtension first.")
-  }
-
-  return extensionZips.first()
-}
-
 // Temporary external module used by the Ghidra harness.
 //
 // Harness tests load the project's local language definitions through
@@ -212,28 +199,36 @@ tasks.named('test', Test) {
 // Convenience task for local development.
 //
 // Installs the latest built extension into a user-managed extensions directory.
-tasks.register('installLocalExtension', Copy) {
+tasks.register('installLocalExtension') {
   group = 'Ghidra Private'
   description = 'Builds and installs the extension into the configured local Ghidra installation.'
   dependsOn tasks.named('buildExtension')
 
-  def extensionDirEnv = System.env.GHIDRA_EXTENSION_DIR
-  if (!extensionDirEnv) {
-    throw new GradleException("GHIDRA_EXTENSION_DIR is not defined!")
-  }
+  doLast {
+    def extensionDirEnv = System.env.GHIDRA_EXTENSION_DIR
+    if (!extensionDirEnv) {
+      throw new GradleException("GHIDRA_EXTENSION_DIR is not defined!")
+    }
 
-  def extensionsDir = new File(extensionDirEnv).getCanonicalFile()
-  def extensionName = 'ghidra-snes'
-  def extensionInstallDir = new File(extensionsDir, extensionName)
+    def extensionsDir = new File(extensionDirEnv).getCanonicalFile()
+    def extensionName = 'ghidra-tblstring'
+    def extensionInstallDir = new File(extensionsDir, extensionName)
 
-  doFirst {
+    def extensionZips = fileTree('dist') {
+      include '*.zip'
+    }.files.sort { a, b -> b.lastModified() <=> a.lastModified() }
+
+    if (extensionZips.isEmpty()) {
+      throw new GradleException("No extension zip found in dist/. buildExtension did not produce a zip.")
+    }
+
     if (extensionInstallDir.exists()) {
       delete extensionInstallDir
     }
-  }
 
-  from({
-    zipTree(latestBuiltExtensionZip())
-  })
-  into extensionsDir
+    copy {
+      from zipTree(extensionZips.first())
+      into extensionsDir
+    }
+  }
 }
