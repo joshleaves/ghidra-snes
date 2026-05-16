@@ -8,6 +8,7 @@ import ghidra.framework.plugintool.PluginInfo;
 import ghidra.framework.plugintool.PluginTool;
 import ghidra.framework.plugintool.util.PluginStatus;
 import ghidra_snes.ui.about.AboutAction;
+import ghidra_snes.ui.options.SnesOptionsAction;
 
 @PluginInfo(
   status = PluginStatus.RELEASED,
@@ -20,5 +21,6 @@ public class SnesPlugin extends ProgramPlugin {
     super(tool);
 
     new AboutAction(tool, getName());
+    new SnesOptionsAction(tool, getName(), this::getCurrentProgram);
   }
 }
