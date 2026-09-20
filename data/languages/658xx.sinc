@@ -42,10 +42,20 @@ define context contextreg
 # are a pain to use in a semantic section.
 # These preprocessor macros work around this and allow for simpler manipulation
 # of status flags (bit range access/assignments).
-@define MF "contextreg[0,1]"
-@define XF "contextreg[1,1]"
+# These indices read the wrong bits. A `define context` field is numbered from the MOST
+# significant bit of the context register (ctx_MF is bit 31 of 32, ctx_XF 30, ctx_EF 29 in the
+# built language), but Ghidra stores a context register BIG-ENDIAN regardless of the language's
+# own endianness (see PcodeArithmetic.fromConst's isContextreg flag, used by
+# DefaultPcodeThread.writeContext). In this little-endian language the stored bytes therefore
+# read back with RegisterValue's bit 31 landing on p-code's bit 7, so the correct accessors are
+# 7/6/5, not 0/1/3. Verified by pushing a hand-built native PHP with p=0x30 (M and X both set)
+# through the SingleStepTests/65816 vector harness: it pushes 0x30 with these indices and 0x00
+# with the indices below. Consequences of the bug: PHP/BRK always pushed M and X as 0, and the
+# emulation-mode direct-page wrap guarded by `$(EF) == 1` in 658xx_memaccess.sinc could never fire.
+@define MF "contextreg[7,1]"
+@define XF "contextreg[6,1]"
 # @define DF "contextreg[2,1]"
-@define EF "contextreg[3,1]"
+@define EF "contextreg[5,1]"
 
 
 define token opbyte (8)
@@ -469,7 +479,11 @@ BIT_OP: RefImmMF    is op=0x89; RefImmMF  { export RefImmMF; }
     local data:1; deref_read8(data, PRIMARY_OP);
     local result:4;
 
-    result = sext(A) - sext(data);
+    # A compare sets carry on an UNSIGNED "register >= operand"; sign-extending both operands
+    # instead answers a signed question, which differs whenever their high (sign) bits disagree
+    # -- e.g. A=0x01, data=0xff: unsigned 1>=255 is false, but sext(1)=1 >= sext(0xff)=-1 is true.
+    # Measured against SingleStepTests/65816: ~40% of cases had P_C wrong with sext.
+    result = zext(A) - zext(data);
     flag8_NZ(result:1);
     CF = result s>= 0;
 }
@@ -483,7 +497,8 @@ BIT_OP: RefImmMF    is op=0x89; RefImmMF  { export RefImmMF; }
     local data:2; deref_read16(data, PRIMARY_OP);
     local result:4;
 
-    result = sext(C) - sext(data);
+    # zext, not sext -- see the CMP 8-bit constructor above for the reasoning.
+    result = zext(C) - zext(data);
     flag16_NZ(result:2);
     CF = result s>= 0;
 }
@@ -526,9 +541,12 @@ CPXY_OP: SEC_OP_COMMON    is (cc=0) ... & SEC_OP_COMMON  { export SEC_OP_COMMON;
 CPXY_OP: RefImmXF    is bbb=0; RefImmXF  { export RefImmXF; }
 
 # CPX 8 bit.
+# A compare sets carry on an UNSIGNED "register >= operand"; zext (not sext) makes the
+# subtraction track that -- see the CMP constructors above for the full reasoning. Measured
+# against SingleStepTests/65816: ~40% of cases had P_C wrong with sext.
 :CPX CPXY_OP    is (ctx_XF=1 & (op=0xe0 | op=0xec | op=0xe4)) ... & CPXY_OP {
     local data:1; deref_read8(data, CPXY_OP);
-    local result:4 = sext(XLow) - sext(data);
+    local result:4 = zext(XLow) - zext(data);
     flag8_NZ(result:1);
     CF = result s>= 0;
 }
@@ -536,23 +554,29 @@ CPXY_OP: RefImmXF    is bbb=0; RefImmXF  { export RefImmXF; }
 # CPX 16 bit.
 :CPX CPXY_OP    is (ctx_XF=0 & (op=0xe0 | op=0xec | op=0xe4)) ... & CPXY_OP {
     local data:2; deref_read16(data, CPXY_OP);
-    local result:4 = sext(X) - sext(data);
+    local result:4 = zext(X) - zext(data);
     flag16_NZ(result:2);
     CF = result s>= 0;
 }
 
 # CPY 8 bit.
-:CPY CPXY_OP    is (ctx_XF=0 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_OP {
+# The ctx_XF constraints on this pair were SWAPPED -- this constructor (the 8-bit body,
+# comparing YLow) was gated by ctx_XF=0, so with 8-bit index registers the 16-bit body below ran
+# instead, comparing a 16-bit Y against a two-byte read whose second byte is the following
+# opcode. CPX above has always been correct; nothing else in the file has this mismatch (audited
+# across every ctx_MF/ctx_XF-split constructor). Also zext, not sext -- see CPX above.
+:CPY CPXY_OP    is (ctx_XF=1 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_OP {
     local data:1; deref_read8(data, CPXY_OP);
-    local result:4 = sext(YLow) - sext(data);
+    local result:4 = zext(YLow) - zext(data);
     flag8_NZ(result:1);
     CF = result s>= 0;
 }
 
 # CPY 16 bit.
-:CPY CPXY_OP    is (ctx_XF=1 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_OP {
+# See the 8-bit CPY constructor above: this body's ctx_XF constraint was swapped with it.
+:CPY CPXY_OP    is (ctx_XF=0 & (op=0xc0 | op=0xcc | op=0xc4)) ... & CPXY_OP {
     local data:2; deref_read16(data, CPXY_OP);
-    local result:4 = sext(Y) - sext(data);
+    local result:4 = zext(Y) - zext(data);
     flag16_NZ(result:2);
     CF = result s>= 0;
 }
@@ -733,23 +757,47 @@ macro do_inc16(_out, _data) {
     Y = result;
 }
 
+# Direct and indirect jumps are kept in SEPARATE tables below. The direct form exports a memory
+# handle and branches to its address with a plain `goto`, which is a real static flow edge. The
+# indirect forms (6C/7C/DC) compute their target at run time and export it as a memory handle
+# too -- but a plain `goto TABLE` then dereferences that handle a SECOND time and branches to
+# the temporary's own address rather than to the computed target. Generated p-code showed it
+# plainly: `(unique,0xf400,3) LOAD (const,...), (unique,0xf300,3)` followed by
+# `BRANCH (unique,0xf400,3)` -- every indirect jump landed on the same fixed address regardless
+# of its operand (10,000/10,000 SingleStepTests/65816 cases failing for each of these opcodes).
+# The fix is to branch through the computed VALUE with `goto [...]`, the idiom Ghidra's own 6502
+# spec uses for JMP (abs) -- so the indirect forms need their own table, since a table's
+# constructors must all export the same way.
 JMP_OP: MemAbsJmp       is op=0x4c; MemAbsJmp       { export MemAbsJmp; }
-JMP_OP: MemAbsIndJmp    is op=0x6c; MemAbsIndJmp    { export MemAbsIndJmp; }
-JMP_OP: MemAbsIdxIndJmp is op=0x7c; MemAbsIdxIndJmp { export MemAbsIdxIndJmp; }
+JMP_IND_OP: MemAbsIndJmp    is op=0x6c; MemAbsIndJmp    { export MemAbsIndJmp; }
+JMP_IND_OP: MemAbsIdxIndJmp is op=0x7c; MemAbsIdxIndJmp { export MemAbsIdxIndJmp; }
 
 # JMP
-:JMP JMP_OP is (op=0x4c | op=0x6c | op=0x7c) ... & JMP_OP
+:JMP JMP_OP is op=0x4c ... & JMP_OP
 {
     goto JMP_OP;
 }
 
+# JMP, indirect (6C) and indexed-indirect (7C): branch through the computed VALUE, not a
+# second dereference of the handle -- see the header comment above.
+:JMP JMP_IND_OP is (op=0x6c | op=0x7c) ... & JMP_IND_OP
+{
+    goto [JMP_IND_OP];
+}
+
 JML_OP: MemAbsLongJmp    is op=0x5c; MemAbsLongJmp    { export MemAbsLongJmp; }
-JML_OP: MemAbsIndLongJmp is op=0xdc; MemAbsIndLongJmp { export MemAbsIndLongJmp; }
+JML_IND_OP: MemAbsIndLongJmp is op=0xdc; MemAbsIndLongJmp { export MemAbsIndLongJmp; }
 
 # JML
-:JML JML_OP is (op=0x5c | op=0xdc) ... & JML_OP
+:JML JML_OP is op=0x5c ... & JML_OP
 {
     goto JML_OP;
+}
+
+# JML, indirect long (DC): same fix as JMP's indirect forms above.
+:JML JML_IND_OP is op=0xdc ... & JML_IND_OP
+{
+    goto [JML_IND_OP];
 }
 
 macro jsl_calculate_push_addr(_out) {
@@ -785,7 +833,9 @@ macro jsl_calculate_push_addr(_out) {
 }
 
 JSR_OP: MemAbsJmp    is op=0x20; MemAbsJmp  { export MemAbsJmp; }
-JSR_OP: MemAbsIdxIndJmp    is op=0xfc; MemAbsIdxIndJmp  { export MemAbsIdxIndJmp; }
+# FC (indexed-indirect call) is split into its own table -- same double-dereference bug as
+# JMP/JML's indirect forms above, since its target is likewise computed at run time.
+JSR_IND_OP: MemAbsIdxIndJmp    is op=0xfc; MemAbsIdxIndJmp  { export MemAbsIdxIndJmp; }
 
 macro jsr_calculate_push_addr(_out) {
     local this_pc_full:3 = inst_start;
@@ -797,12 +847,22 @@ macro jsr_calculate_push_addr(_out) {
     _out = push_addr;
 }
 
-# JSR native, absolute addressing or absolute indexed indirect addressing.
-:JSR JSR_OP    is ctx_EF=0 & (op=0x20 | op=0xfc) ... & JSR_OP
+# JSR native, absolute addressing.
+:JSR JSR_OP    is ctx_EF=0 & op=0x20 ... & JSR_OP
 {
     local push_addr:2; jsr_calculate_push_addr(push_addr);
     push16_native(push_addr);
     call JSR_OP;
+}
+
+# JSR native, absolute indexed indirect addressing (FC): its target is computed at run time,
+# so it must branch through the VALUE (`call [...]`), not dereference the handle a second
+# time -- see the JMP/JML indirect forms above for the full reasoning.
+:JSR JSR_IND_OP    is ctx_EF=0 & op=0xfc ... & JSR_IND_OP
+{
+    local push_addr:2; jsr_calculate_push_addr(push_addr);
+    push16_native(push_addr);
+    call [JSR_IND_OP];
 }
 
 # JSR emulation, absolute addressing.
@@ -815,12 +875,12 @@ macro jsr_calculate_push_addr(_out) {
 
 # JSR emulation, absolute indexed indirect addressing.
 # Does not limit the top byte of the SP to 1 until the end of the instruction execution.
-:JSR JSR_OP    is ctx_EF=1 & op=0xfc ... & JSR_OP
+:JSR JSR_IND_OP    is ctx_EF=1 & op=0xfc ... & JSR_IND_OP
 {
     local push_addr:2; jsr_calculate_push_addr(push_addr);
     push16_native(push_addr);
     SPHigh = 1;
-    call JSR_OP;
+    call [JSR_IND_OP];
 }
 
 # LDA 8 bit.
@@ -1913,10 +1973,14 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
     flag8_NZ(XLow);
 }
 # TXA  8 -> 16
+# Flags follow the width of the DESTINATION, not the source: with a 16-bit accumulator N is
+# bit 15 of the result (always 0 here, since the 8-bit index is zero-extended) and Z covers all
+# 16 bits. flag8_NZ took N from bit 7 instead, which is wrong for every source value >= 0x80 --
+# measured against SingleStepTests/65816 at 8,771 of 10,000 cases failing on P_N.
 :TXA    is op=0x8a & ctx_XF=1 & ctx_MF=0
 {
     C = zext(XLow);
-    flag8_NZ(XLow);
+    flag16_NZ(C);
 }
 # TXA  16 -> 16
 :TXA    is op=0x8a & ctx_XF=0 & ctx_MF=0
@@ -1928,7 +1992,12 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
 # TXS emulation.
 :TXS    is op=0x9a & ctx_EF=1
 {
+    # Missing SPHigh=1 clamp, unlike TCS-emulation's own equivalent write from an 8-bit source
+    # register two constructors above. Emulation mode architecturally forces the stack into
+    # page 1, so this is a no-op on any state a real 65816 can reach -- stated explicitly here
+    # rather than depending on every caller having kept SPHigh at 1.
     SPLow = XLow;
+    SPHigh = 1;
 }
 # TXS native  16 -> 8
 :TXS    is op=0x9a & ctx_EF=0 & ctx_XF=1
@@ -1962,10 +2031,12 @@ TEST_OP: RefDP    is dd=1; RefDP  { export RefDP; }
     flag8_NZ(YLow);
 }
 # TYA  8 -> 16
+# flag16_NZ, not flag8_NZ -- see the TXA 8->16 constructor above for the reasoning and the
+# measurement (this row failed 8,737 of 10,000 SingleStepTests/65816 cases on P_N).
 :TYA    is op=0x98 & ctx_XF=1 & ctx_MF=0
 {
     C = zext(YLow);
-    flag8_NZ(YLow);
+    flag16_NZ(C);
 }
 # TYA  16 -> 16
 :TYA    is op=0x98 & ctx_XF=0 & ctx_MF=0
@@ -1997,12 +2068,16 @@ define pcodeop wai;
 
 :WDM    is op=0x42; unused8  {}
 
+# XBA exchanges A's low and high halves; flags come from the NEW low byte (the old high byte).
+# This never read B at all: it named the OLD LOW byte "old_b", set B = A, then set A back to
+# itself, leaving the accumulator unchanged -- only half the swap happened. Measured against
+# SingleStepTests/65816: ~9,955 of 10,000 cases failing in both modes on A and the N flag.
 :XBA    is op=0xeb
 {
-    local old_b:1 = A;
-    B = A;
-    A = old_b;
-    flag8_NZ(old_b);
+    local old_a:1 = A;
+    A = B;
+    B = old_a;
+    flag8_NZ(A);
 }
 
 # XCE native -> ?
@@ -2022,10 +2097,10 @@ define pcodeop wai;
     goto <end>;
 
     <to_native>
-    # It's not clear what happens when XCE re-switches into the current mode.
-    # I've assumed everything happens just as it would in a "real" mode switch.
-    XHigh = 0;
-    YHigh = 0;
+    # Native -> native: the mode did not actually change, so nothing about the register widths
+    # changed either, and there is nothing to truncate. Measured against SingleStepTests/65816:
+    # the previous guess (truncate as if a real mode switch happened) failed 25 of 32 native
+    # cases on X and Y alone; leaving this no-op case alone passes 32/32.
 
     <end>
     CF = 0;
