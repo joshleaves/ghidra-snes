@@ -155,6 +155,8 @@ public class SnesRomLoader extends AbstractProgramLoader {
       MemoryMap.createBlockWram(program);
       MemoryMap.createBlockHighHalfRomMirrors(program, romType, cartridge.getRomHeader(), 0x00);
       Vectors.createVectorLabels(program);
+      settings.log().appendMsg(String.format("%s: %d vector handler functions created", LOADER_NAME,
+          Vectors.createVectorEntryPoints(program)));
 
       SnesOptions.initializeFromCartridge(program, cartridge);
     } catch (Exception e) {
