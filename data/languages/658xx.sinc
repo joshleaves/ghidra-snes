@@ -1293,10 +1293,15 @@ macro do_lsr16(_out, _data) {
     flag8_NZ(DBR);
 }
 # PLB emulation.
+# PLB is a 65816-only opcode, and like PLD below it computes its stack address with the full
+# 16-bit S even in emulation mode (S=$01FF reads $0200, not $0100); only afterwards is S's high
+# byte forced back to $01. Measured against SingleStepTests/65816: this row failed exactly the
+# ~1/256 of emulation cases with SPLow=$FF while it wrapped within page 1.
 :PLB    is ctx_EF=1 & op=0xab
 {
-    pull8_emulation(DBR);
+    pull8_native(DBR);
     flag8_NZ(DBR);
+    SPHigh = 1;
 }
 
 # PLD native.
@@ -1315,13 +1320,14 @@ macro do_lsr16(_out, _data) {
 }
 
 # PLP native.
-# UNSUPPORTED: pulling the context flags MF and XF.
-define pcodeop unknown_native_status_pull;
+# MF/XF are decode context and cannot be written from p-code. The X bit's one register effect
+# (clearing XHigh/YHigh when the index registers drop to 8 bits) is taken from the pulled byte
+# itself rather than from an opaque pcodeop, which an emulator cannot execute.
 :PLP    is (ctx_EF=0 & op=0x28)
 {
-    pull_status_native();
-    # Don't know whether XF is now set.
-    local is_x16:1 = unknown_native_status_pull();
+    local status:1;
+    pull_status_native(status);
+    local is_x16:1 = status[4,1] == 0;
 
     if (is_x16) goto <skip_shrink>;
     # "When a sixteen-bit index register is switched to eight bits, the high byte is lost
@@ -1524,11 +1530,12 @@ macro do_ror16(_out, _data) {
 }
 
 # RTI native.
-# UNSUPPORTED: pulling the context flags MF and XF.
+# MF/XF: as PLP native above.
 :RTI    is (ctx_EF=0 & op=0x40)
 {
-    pull_status_native();
-    local is_x16:1 = unknown_native_status_pull();
+    local status:1;
+    pull_status_native(status);
+    local is_x16:1 = status[4,1] == 0;
 
     if (is_x16) goto <skip_shrink>;
     # "When a sixteen-bit index register is switched to eight bits, the high byte is lost
