@@ -158,18 +158,21 @@ macro push_status_emulation() {
     push8_emulation(status);
 }
 
-# UNSUPPORTED: pulling the context flags MF and XF.
-macro pull_status_native() {
-    local status:1;
-    pull8_native(status);
-    NF = status[7,1];
-    VF = status[6,1];
-    # MF = status[5,1];
-    # XF = status[4,1];
-    DF = status[3,1];
-    IF = status[2,1];
-    ZF = status[1,1];
-    CF = status[0,1];
+# MF and XF are decode context, which p-code cannot write, so they are not assigned here. The
+# pulled byte is handed back instead: the caller computes the X bit's register effect from it,
+# and the next instruction's decode context is left to the analyzer or emulator.
+macro pull_status_native(status) {
+    local pulled:1;
+    pull8_native(pulled);
+    NF = pulled[7,1];
+    VF = pulled[6,1];
+    # MF = pulled[5,1];
+    # XF = pulled[4,1];
+    DF = pulled[3,1];
+    IF = pulled[2,1];
+    ZF = pulled[1,1];
+    CF = pulled[0,1];
+    status = pulled;
 }
 
 macro pull_status_emulation() {
